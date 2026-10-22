@@ -1,0 +1,67 @@
+{
+  "author": "Jota",
+  "dependencies": {
+    "@rebble/clay": "1.0.8"
+  },
+  "keywords": [
+    "pebble-app",
+    "watchface",
+    "lean",
+    "accessibility"
+  ],
+  "name": "watchface",
+  "pebble": {
+    "capabilities": [
+      "configurable",
+      "location"
+    ],
+    "displayName": "_watchface",
+    "enableMultiJS": true,
+    "messageKeys": [
+      "COLOR_BG",
+      "COLOR_FG",
+      "WRIST",
+      "TILT",
+      "FLIP",
+      "DATE",
+      "LANG",
+      "FONTSIZE",
+      "NIGHTMODE",
+      "LAT",
+      "LON"
+    ],
+    "projectType": "native",
+    "resources": {
+      "media": [
+        {
+          "characterRegex": "[0-9]",
+          "file": "fonts/leco1976-pebble.otf",
+          "name": "FONT_LECO_104",
+          "type": "font"
+        },
+        {
+          "characterRegex": "[0-9A-Z\u00c1]",
+          "file": "fonts/leco1976-pebble.otf",
+          "name": "FONT_LECO_28",
+          "type": "font"
+        },
+        {
+          "characterRegex": "[0-9A-Z\u00c1]",
+          "file": "fonts/leco1976-pebble.otf",
+          "name": "FONT_LECO_22",
+          "type": "font"
+        }
+      ]
+    },
+    "sdkVersion": "3",
+    "targetPlatforms": [
+      "emery",
+      "gabbro"
+    ],
+    "uuid": "c1ee2339-42a7-436e-83d9-e728e01ea22f",
+    "watchapp": {
+      "watchface": true
+    }
+  },
+  "version": "1.0.2"
+}

@@ -1,0 +1,165 @@
+[
+  {
+    "type": "heading",
+    "defaultValue": "_watchface"
+  },
+  {
+    "type": "text",
+    "defaultValue": "Not everyone can turn their arm far enough to see a watch straight on. Lean turns the time instead, so it meets your eye at the angle your wrist naturally comes to rest."
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Angle"
+      },
+      {
+        "type": "radiogroup",
+        "messageKey": "WRIST",
+        "label": "Worn on",
+        "defaultValue": "0",
+        "options": [
+          {
+            "label": "Left wrist  \u00b7  the time turns clockwise",
+            "value": "0"
+          },
+          {
+            "label": "Right wrist  \u00b7  the time turns counter-clockwise",
+            "value": "1"
+          }
+        ]
+      },
+      {
+        "type": "slider",
+        "messageKey": "TILT",
+        "label": "Tilt",
+        "description": "In degrees. 0 keeps the time upright. Raise your wrist as you normally would and pick the value at which the digits look level to you.",
+        "defaultValue": 20,
+        "min": 0,
+        "max": 90,
+        "step": 5
+      },
+      {
+        "type": "toggle",
+        "messageKey": "FLIP",
+        "label": "Worn upside down",
+        "description": "Turns the time by another 180 degrees, for wearing the watch the other way round. Leave it off if your watch already turns the whole display.",
+        "defaultValue": false
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Date"
+      },
+      {
+        "type": "toggle",
+        "messageKey": "DATE",
+        "label": "Show the date",
+        "description": "Weekday and day, turned with the time. They go wherever the most space is left - side by side, stacked, or apart if that leaves noticeably more room.",
+        "defaultValue": false
+      },
+      {
+        "type": "select",
+        "messageKey": "LANG",
+        "label": "Weekday language",
+        "defaultValue": "0",
+        "options": [
+          {
+            "label": "Same as the watch",
+            "value": "0"
+          },
+          {
+            "label": "English  \u00b7  MO TU WE",
+            "value": "1"
+          },
+          {
+            "label": "Deutsch  \u00b7  MO DI MI",
+            "value": "2"
+          },
+          {
+            "label": "Fran\u00e7ais  \u00b7  LU MA ME",
+            "value": "3"
+          },
+          {
+            "label": "Espa\u00f1ol  \u00b7  LU MA MI",
+            "value": "4"
+          },
+          {
+            "label": "Italiano  \u00b7  LU MA ME",
+            "value": "5"
+          },
+          {
+            "label": "Portugu\u00eas  \u00b7  SEG TER QUA",
+            "value": "6"
+          },
+          {
+            "label": "Nederlands  \u00b7  MA DI WO",
+            "value": "7"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Display"
+      },
+      {
+        "type": "slider",
+        "messageKey": "FONTSIZE",
+        "label": "Font size",
+        "description": "In percent \u2014 100 is the standard size. The tilted block still shrinks to fit at steep angles.",
+        "defaultValue": 100,
+        "min": 60,
+        "max": 140,
+        "step": 2
+      },
+      {
+        "type": "toggle",
+        "messageKey": "NIGHTMODE",
+        "label": "Night mode",
+        "description": "After sunset the face switches to white digits on black, whatever colours you picked below; yours come back at sunrise. The watch works sunrise and sunset out itself from your location (the phone sends it once), so there is no nightly phone traffic.",
+        "defaultValue": true
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "items": [
+      {
+        "type": "heading",
+        "defaultValue": "Colours"
+      },
+      {
+        "type": "color",
+        "messageKey": "COLOR_BG",
+        "label": "Background",
+        "defaultValue": "0x000000",
+        "sunlight": true
+      },
+      {
+        "type": "color",
+        "messageKey": "COLOR_FG",
+        "label": "Digits",
+        "defaultValue": "0xFFFFFF",
+        "sunlight": true
+      },
+      {
+        "type": "text",
+        "defaultValue": "If both colours match, the watch falls back to a legible one. 12 or 24 hour format follows your watch setting."
+      }
+    ]
+  },
+  {
+    "type": "submit",
+    "defaultValue": "Save"
+  }
+]

@@ -1,0 +1,85 @@
+{
+  "author": "Jota",
+  "dependencies": {},
+  "keywords": [
+    "battery"
+  ],
+  "name": "battery-days",
+  "pebble": {
+    "capabilities": [
+      "location"
+    ],
+    "displayName": "_battery",
+    "enableMultiJS": true,
+    "messageKeys": [
+      "NIGHT",
+      "REQUEST"
+    ],
+    "resources": {
+      "media": [
+        {
+          "type": "font",
+          "name": "FONT_LECO_68",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[0-9]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_LECO_48",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[0-9]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_LECO_56",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[0-9]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_LECO_40",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[0-9]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_PCT_34",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[%]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_PCT_28",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[%]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_PCT_24",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[%]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_PCT_20",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[%]"
+        }
+      ]
+    },
+    "sdkVersion": "3",
+    "targetPlatforms": [
+      "aplite",
+      "basalt",
+      "chalk",
+      "diorite",
+      "emery",
+      "flint"
+    ],
+    "uuid": "d260053c-5ec2-42d1-82d6-b38db33abd9d",
+    "watchapp": {
+      "watchface": false
+    }
+  },
+  "version": "2.0.1"
+}

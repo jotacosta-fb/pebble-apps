@@ -1,0 +1,67 @@
+LEAN - Rebble App Store listing
+
+Wird bei jeder Veroeffentlichung mit aktualisiert. Englisch, weil der Store
+international ist. Reiner Text, damit sich die Abschnitte ohne Nacharbeit in
+die Store-Felder uebernehmen lassen. Zum Veroeffentlichen aus diesem
+Verzeichnis heraus:
+
+    pebble publish --release-notes "..."
+
+-------------------------------------------------------------------------
+
+TITLE
+
+Lean
+
+
+TAGLINE
+
+The time meets your eye at the angle your wrist comes to rest.
+
+
+DESCRIPTION
+
+Every watch assumes you can turn your arm until the face lies straight in front of you. Not everyone can. A stiff shoulder, a painful wrist, a cast, a wheelchair armrest, a steering wheel - and the digits end up tilted every time you look.
+
+Lean turns the time instead of your arm. Raise your wrist the way you normally would, see how far the numbers are off, and set that angle. From then on the time sits level when you glance at it.
+
+Left and right are both covered. Worn on the left wrist the time turns clockwise, worn on the right it turns counter-clockwise - the way each arm naturally comes up. Anything from 0 to 90 degrees, in steps of five. And if you wear the watch the other way round, one switch turns the time upside down as well.
+
+The time is set in LECO 1976, the geometric numerals the Pebble was always associated with, drawn far larger than the built-in version allows - two lines, hours above minutes. The edges are smoothed as the numerals are turned, so they stay clean at any angle. Should the turned block ever touch the edge of the rectangular screen, it is scaled down just enough to fit.
+
+The date is there if you want it: the weekday and the day of the month, turned along with the time. The watch looks for the largest free space left around the turned digits and puts the date there - side by side, stacked, or the two parts apart if that leaves noticeably more room. Should it not fit anywhere at full size, it is set a little smaller. The weekday follows the language of your watch (English, German, French, Spanish, Italian, Portuguese or Dutch), or the one you pick.
+
+Both colours are yours. Pick a background and a colour for the digits; if you happen to pick the same one twice, the watch quietly substitutes something you can read.
+
+There is no animation and no second hand. The face is drawn once a minute and then left alone. No Bluetooth traffic while it runs, no sensors.
+
+Made for Pebble Time 2 and Pebble Round 2.
+
+
+SETTINGS
+
+- Worn on - left wrist (the time turns clockwise) or right wrist (the time turns counter-clockwise).
+- Tilt - 0 to 90 degrees. 0 keeps the time upright.
+- Worn upside down - turns the time by another 180 degrees. Leave it off if your watch already turns the whole display.
+- Show the date - weekday and day, placed wherever the most space is left.
+- Weekday language - the same as the watch, or one of English, German, French, Spanish, Italian, Portuguese and Dutch.
+- Background - the face colour.
+- Digits - the colour of the numerals.
+
+12 or 24 hour format follows the watch setting.
+
+
+CATEGORY
+
+Watchfaces (Minimalist / Modern)
+
+
+RELEASE NOTES
+
+1.1.0
+
+Optional date: weekday and day, turned with the time and placed in the largest free space around it. The weekday follows the language of your watch, or the one you pick.
+
+1.0.0
+
+First release.

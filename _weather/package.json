@@ -1,0 +1,179 @@
+{
+  "author": "Jota",
+  "dependencies": {},
+  "keywords": [
+    "weather"
+  ],
+  "name": "minmax-weather",
+  "pebble": {
+    "capabilities": [
+      "location"
+    ],
+    "displayName": "_weather",
+    "enableMultiJS": true,
+    "messageKeys": [
+      "TEMP_MAX",
+      "TEMP_MIN",
+      "PRECIP",
+      "CODE",
+      "REQUEST",
+      "NIGHT"
+    ],
+    "resources": {
+      "media": [
+        {
+          "type": "font",
+          "name": "FONT_LECO_64",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[0-9\u00b0-]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_LECO_46",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[0-9\u00b0-]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_LECO_56",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[0-9\u00b0-]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_LECO_40",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[0-9\u00b0-]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_LECO_48",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[0-9\\u00b0-]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_LECO_80",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[0-9\\u00b0-]",
+          "targetPlatforms": [
+            "emery"
+          ]
+        },
+        {
+          "type": "font",
+          "name": "FONT_LECO_72",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[0-9\\u00b0-]",
+          "targetPlatforms": [
+            "emery"
+          ]
+        },
+        {
+          "type": "font",
+          "name": "FONT_LECO_50",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[0-9\\u00b0-]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_LECO_78",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[0-9\\u00b0-]",
+          "targetPlatforms": [
+            "emery"
+          ]
+        },
+        {
+          "type": "font",
+          "name": "FONT_LECO_70",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[0-9\\u00b0-]",
+          "targetPlatforms": [
+            "emery"
+          ]
+        },
+        {
+          "type": "font",
+          "name": "FONT_LECO_62",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[0-9\\u00b0-]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_LECO_54",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[0-9\\u00b0-]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_LECO_44",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[0-9\\u00b0-]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_LECO_38",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[0-9\\u00b0-]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_LECO_76",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[0-9\\u00b0-]",
+          "targetPlatforms": [
+            "emery"
+          ]
+        },
+        {
+          "type": "font",
+          "name": "FONT_LECO_68",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[0-9\\u00b0-]",
+          "targetPlatforms": [
+            "emery"
+          ]
+        },
+        {
+          "type": "font",
+          "name": "FONT_LECO_60",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[0-9\\u00b0-]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_LECO_52",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[0-9\\u00b0-]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_LECO_42",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[0-9\\u00b0-]"
+        },
+        {
+          "type": "font",
+          "name": "FONT_LECO_36",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[0-9\\u00b0-]"
+        }
+      ]
+    },
+    "sdkVersion": "3",
+    "targetPlatforms": [
+      "aplite",
+      "basalt",
+      "chalk",
+      "diorite",
+      "emery",
+      "flint"
+    ],
+    "uuid": "275a2554-623b-4e3b-a353-4223334dab8f",
+    "watchapp": {
+      "watchface": false
+    }
+  },
+  "version": "2.1.3"
+}

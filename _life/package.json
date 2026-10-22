@@ -1,0 +1,235 @@
+{
+  "author": "Jota",
+  "dependencies": {},
+  "keywords": [
+    "mtg",
+    "magic",
+    "life",
+    "counter"
+  ],
+  "name": "life",
+  "pebble": {
+    "capabilities": [],
+    "displayName": "_life",
+    "enableMultiJS": true,
+    "messageKeys": [],
+    "resources": {
+      "media": [
+        {
+          "type": "bitmap",
+          "name": "D120_0",
+          "file": "images/d120_0.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D120_1",
+          "file": "images/d120_1.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D120_2",
+          "file": "images/d120_2.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D120_3",
+          "file": "images/d120_3.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D120_4",
+          "file": "images/d120_4.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D120_5",
+          "file": "images/d120_5.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D120_6",
+          "file": "images/d120_6.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D120_7",
+          "file": "images/d120_7.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D120_8",
+          "file": "images/d120_8.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D120_9",
+          "file": "images/d120_9.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D88_0",
+          "file": "images/d88_0.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D88_1",
+          "file": "images/d88_1.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D88_2",
+          "file": "images/d88_2.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D88_3",
+          "file": "images/d88_3.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D88_4",
+          "file": "images/d88_4.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D88_5",
+          "file": "images/d88_5.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D88_6",
+          "file": "images/d88_6.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D88_7",
+          "file": "images/d88_7.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D88_8",
+          "file": "images/d88_8.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D88_9",
+          "file": "images/d88_9.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D86_0",
+          "file": "images/d86_0.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D86_1",
+          "file": "images/d86_1.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D86_2",
+          "file": "images/d86_2.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D86_3",
+          "file": "images/d86_3.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D86_4",
+          "file": "images/d86_4.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D86_5",
+          "file": "images/d86_5.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D86_6",
+          "file": "images/d86_6.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D86_7",
+          "file": "images/d86_7.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D86_8",
+          "file": "images/d86_8.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D86_9",
+          "file": "images/d86_9.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D64_0",
+          "file": "images/d64_0.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D64_1",
+          "file": "images/d64_1.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D64_2",
+          "file": "images/d64_2.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D64_3",
+          "file": "images/d64_3.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D64_4",
+          "file": "images/d64_4.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D64_5",
+          "file": "images/d64_5.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D64_6",
+          "file": "images/d64_6.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D64_7",
+          "file": "images/d64_7.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D64_8",
+          "file": "images/d64_8.png"
+        },
+        {
+          "type": "bitmap",
+          "name": "D64_9",
+          "file": "images/d64_9.png"
+        }
+      ]
+    },
+    "sdkVersion": "3",
+    "targetPlatforms": [
+      "aplite",
+      "basalt",
+      "chalk",
+      "diorite",
+      "emery",
+      "flint"
+    ],
+    "uuid": "ec63d07b-783b-4b49-805f-651f203d98d3",
+    "watchapp": {
+      "watchface": false
+    }
+  },
+  "version": "1.9.4"
+}
