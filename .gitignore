@@ -1,4 +1,5 @@
 build/
 node_modules/
 *.pbw
+.lock-*
 .DS_Store

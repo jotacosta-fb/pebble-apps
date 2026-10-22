@@ -1,7 +1,9 @@
 #include <pebble.h>
 
-// _timer — a countdown timer. Just the time, nothing else: a black
-// rectangle around the time means stopped/paused; no rectangle means
+// _timer — a countdown timer. Just the time, nothing else. The
+// state is marked on the time itself: a black box around the
+// minutes only ([45]:00) means ready to start; an underline means
+// paused; a full black band (blinking) means done; no mark means
 // running. Defaults to 45:00. Up/Down adjust by one minute (hold to
 // repeat), Select starts/stops, holding Select resets to the set time.
 // Remaining time is computed from a stored end timestamp, so it's
@@ -188,13 +190,6 @@ static void main_update_proc(Layer *layer, GContext *ctx) {
 #else
   GFont font = big ? s_f66 : s_f50;
 #endif
-  // Not running -> black rectangle around the time, white digits.
-  // Running -> no rectangle, black digits on the plain screen.
-  bool inverted = (s_state != ST_RUNNING);
-  GColor fg = inverted ? GColorWhite : GColorBlack;
-  graphics_context_set_text_color(ctx, fg);
-  graphics_context_set_fill_color(ctx, fg);
-
   int total_s = display_seconds();
   char min_buf[8], sec_buf[8];
   snprintf(min_buf, sizeof(min_buf), "%d", total_s / 60);
@@ -225,33 +220,50 @@ static void main_update_proc(Layer *layer, GContext *ctx) {
   }
 
   int x = (b.size.w - total) / 2;
-  if (inverted) {
-    // Rectangle hugging the glyph box (LECO glyphs span ~30%-98% of
-    // their line height) with a little padding on every side.
-    // Padding shrinks if the (wide) time would push the rectangle to
-    // the screen edges — it must always hug, never bleed.
-    int pad_x = (b.size.w - total) / 2 - 3;
-    if (pad_x > 10) pad_x = 10;
-    if (pad_x < 3) pad_x = 3;
-    int pad_y = big ? 8 : 6;
-    int glyph_top = min_sz.h * 30 / 100;
-    int glyph_bottom = min_sz.h * 98 / 100;
-    // Paused gets a darker-gray band (user): DarkGray is the
-    // darkest gray in the Pebble palette, so the band is DarkGray
-    // dithered with black checkerboard pixels — a genuine shade
-    // darker. Ready and done keep the solid black band.
-    GRect band = GRect(x - pad_x, glyph_top - pad_y, total + 2 * pad_x,
-                       (glyph_bottom - glyph_top) + 2 * pad_y);
-    if (s_state == ST_PAUSED) {
-      fill_dithered_gray(ctx, band);
-    } else {
-      graphics_context_set_fill_color(ctx, GColorBlack);
-      graphics_fill_rect(ctx, band, 0, GCornerNone);
-    }
-    graphics_context_set_fill_color(ctx, GColorWhite);
+  // Decorations hug the glyph box (LECO glyphs span ~30%-98% of
+  // their line height) with a little padding. Padding shrinks if
+  // the (wide) time would push a box to the screen edges — boxes
+  // must always hug, never bleed.
+  int pad_x = (b.size.w - total) / 2 - 3;
+  if (pad_x > 10) pad_x = 10;
+  if (pad_x < 3) pad_x = 3;
+  int pad_y = big ? 8 : 6;
+  int glyph_top = min_sz.h * 30 / 100;
+  int glyph_bottom = min_sz.h * 98 / 100;
+
+  // State marks (user): ready boxes the minutes only — [45]:00;
+  // paused underlines the whole time; done keeps the full black
+  // band; running has no mark.
+  bool box_minutes = (s_state == ST_EDIT);
+  bool band_full = (s_state == ST_DONE);
+  if (band_full) {
+    graphics_context_set_fill_color(ctx, GColorBlack);
+    graphics_fill_rect(ctx,
+                       GRect(x - pad_x, glyph_top - pad_y, total + 2 * pad_x,
+                             (glyph_bottom - glyph_top) + 2 * pad_y),
+                       0, GCornerNone);
+  } else if (box_minutes) {
+    graphics_context_set_fill_color(ctx, GColorBlack);
+    graphics_fill_rect(ctx,
+                       GRect(x - pad_x, glyph_top - pad_y,
+                             min_sz.w + 2 * pad_x,
+                             (glyph_bottom - glyph_top) + 2 * pad_y),
+                       0, GCornerNone);
+  } else if (s_state == ST_PAUSED) {
+    graphics_context_set_fill_color(ctx, GColorBlack);
+    graphics_fill_rect(ctx, GRect(x, glyph_bottom + 2, total, big ? 3 : 2),
+                       0, GCornerNone);
   }
+
+  // Minutes are white only when boxed or banded; everything else
+  // is black on the plain screen.
+  GColor min_fg = (band_full || box_minutes) ? GColorWhite : GColorBlack;
+  GColor rest_fg = band_full ? GColorWhite : GColorBlack;
+  graphics_context_set_text_color(ctx, min_fg);
   graphics_draw_text(ctx, min_buf, font, GRect(x, 0, min_sz.w + 2, b.size.h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+  graphics_context_set_text_color(ctx, rest_fg);
+  graphics_context_set_fill_color(ctx, rest_fg);
   int sq = big ? 6 : 4;
   int colon_cx = x + min_sz.w + colon_w / 2;
   int cy1 = min_sz.h * 54 / 100;
@@ -268,8 +280,8 @@ static void main_update_proc(Layer *layer, GContext *ctx) {
 // ---------- Footer: pause symbol ----------
 // Two bars in the footer, shown ONLY while paused mid-countdown.
 // Running shows nothing here (user: no play symbol); the ready and
-// done states show nothing either — the black band already marks
-// every non-running state, the bars single out "paused".
+// done states show nothing either — the bars, with the underline
+// under the time, single out "paused".
 static void footer_update_proc(Layer *layer, GContext *ctx) {
   if (s_state != ST_PAUSED) return;
   GRect b = layer_get_bounds(layer);
