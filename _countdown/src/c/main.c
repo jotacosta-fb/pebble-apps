@@ -2,9 +2,9 @@
 
 // _timer — a countdown timer. Just the time, nothing else. The
 // state is marked on the time itself: a black box around the
-// minutes only ([45]:00) means ready to start; an underline means
-// paused; a full black band (blinking) means done; no mark means
-// running. Defaults to 45:00. Up/Down adjust by one minute (hold to
+// minutes only ([45]:00) means ready to start; a giant light-grey
+// pause symbol behind the time means paused; a full black band
+// (blinking) means done; no mark means running. Defaults to 45:00. Up/Down adjust by one minute (hold to
 // repeat), Select starts/stops, holding Select resets to the set time.
 // Remaining time is computed from a stored end timestamp, so it's
 // drift-free, and a wakeup is scheduled so the timer still fires if the
@@ -28,7 +28,6 @@ static GFont s_f50;
 static GFont s_f70;  // emery-only (a 70 digit exceeds the 256B glyph cap elsewhere)
 #endif
 static Layer *s_main_layer;
-static Layer *s_footer_layer;  // defined with the footer proc below
 
 static int s_state = ST_EDIT;
 static int s_set_seconds = DEFAULT_SECONDS;
@@ -52,8 +51,7 @@ static void save_state(void) {
   persist_write_int(PK_REMAINING, s_remaining);
 }
 
-static void refresh_display(void) { layer_mark_dirty(s_main_layer);
-  if (s_footer_layer) layer_mark_dirty(s_footer_layer); }
+static void refresh_display(void) { layer_mark_dirty(s_main_layer); }
 
 static void cancel_wakeup(void) {
   if (s_wakeup_id >= 0) {
@@ -165,19 +163,6 @@ static void click_config_provider(void *context) {
 }
 
 // Main: "MM:SS" in LECO, colon drawn as two small squares (LECO-style).
-// DarkGray dithered with black checkerboard pixels = a gray one
-// shade darker than the palette's darkest named gray.
-static void fill_dithered_gray(GContext *ctx, GRect r) {
-  graphics_context_set_fill_color(ctx, GColorDarkGray);
-  graphics_fill_rect(ctx, r, 0, GCornerNone);
-  graphics_context_set_fill_color(ctx, GColorBlack);
-  for (int yy = r.origin.y; yy < r.origin.y + r.size.h; yy++) {
-    for (int xx = r.origin.x + ((yy & 1) ? 0 : 1); xx < r.origin.x + r.size.w;
-         xx += 2) {
-      graphics_draw_pixel(ctx, GPoint(xx, yy));
-    }
-  }
-}
 
 static void main_update_proc(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
@@ -200,7 +185,7 @@ static void main_update_proc(Layer *layer, GContext *ctx) {
       min_buf, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
   GSize sec_sz = graphics_text_layout_get_content_size(
       sec_buf, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
-  int colon_w = big ? 16 : 12;
+  int colon_w = big ? 24 : 18;  // widened: the minutes box crowded the colon
   int total = min_sz.w + colon_w + sec_sz.w;
   if (total > b.size.w - 6) {
     font = big ? s_f56 : s_f47;
@@ -232,8 +217,18 @@ static void main_update_proc(Layer *layer, GContext *ctx) {
   int glyph_bottom = min_sz.h * 98 / 100;
 
   // State marks (user): ready boxes the minutes only — [45]:00;
-  // paused underlines the whole time; done keeps the full black
-  // band; running has no mark.
+  // paused puts a giant light-grey pause symbol behind the time;
+  // done keeps the full black band; running has no mark.
+  if (s_state == ST_PAUSED) {
+    int bw = big ? 20 : 13;
+    int bh = big ? 64 : 44;
+    int gap = big ? 16 : 11;
+    int bx = (b.size.w - (2 * bw + gap)) / 2;
+    int by = (glyph_top + glyph_bottom) / 2 - bh / 2;
+    graphics_context_set_fill_color(ctx, GColorLightGray);
+    graphics_fill_rect(ctx, GRect(bx, by, bw, bh), 0, GCornerNone);
+    graphics_fill_rect(ctx, GRect(bx + bw + gap, by, bw, bh), 0, GCornerNone);
+  }
   bool box_minutes = (s_state == ST_EDIT);
   bool band_full = (s_state == ST_DONE);
   if (band_full) {
@@ -243,15 +238,14 @@ static void main_update_proc(Layer *layer, GContext *ctx) {
                              (glyph_bottom - glyph_top) + 2 * pad_y),
                        0, GCornerNone);
   } else if (box_minutes) {
+    // Shifted a few px left (user: the box crowded the colon) —
+    // the minutes keep symmetric padding inside the box, the gap
+    // before the colon grows.
     graphics_context_set_fill_color(ctx, GColorBlack);
     graphics_fill_rect(ctx,
-                       GRect(x - pad_x, glyph_top - pad_y,
+                       GRect(x - pad_x - 4, glyph_top - pad_y,
                              min_sz.w + 2 * pad_x,
                              (glyph_bottom - glyph_top) + 2 * pad_y),
-                       0, GCornerNone);
-  } else if (s_state == ST_PAUSED) {
-    graphics_context_set_fill_color(ctx, GColorBlack);
-    graphics_fill_rect(ctx, GRect(x, glyph_bottom + 2, total, big ? 3 : 2),
                        0, GCornerNone);
   }
 
@@ -277,25 +271,6 @@ static void main_update_proc(Layer *layer, GContext *ctx) {
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
 }
 
-// ---------- Footer: pause symbol ----------
-// Two bars in the footer, shown ONLY while paused mid-countdown.
-// Running shows nothing here (user: no play symbol); the ready and
-// done states show nothing either — the bars, with the underline
-// under the time, single out "paused".
-static void footer_update_proc(Layer *layer, GContext *ctx) {
-  if (s_state != ST_PAUSED) return;
-  GRect b = layer_get_bounds(layer);
-  bool big = b.size.w >= 180;
-  int bw = big ? 6 : 4;
-  int bh = big ? 18 : 14;
-  int gap = big ? 6 : 4;
-  int x0 = (b.size.w - (2 * bw + gap)) / 2;
-  int y0 = (b.size.h - bh) / 2;
-  // Same dithered darker gray as the paused band (user).
-  fill_dithered_gray(ctx, GRect(x0, y0, bw, bh));
-  fill_dithered_gray(ctx, GRect(x0 + bw + gap, y0, bw, bh));
-}
-
 static void window_load(Window *window) {
   Layer *root = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(root);
@@ -310,16 +285,11 @@ static void window_load(Window *window) {
   layer_set_update_proc(s_main_layer, main_update_proc);
   layer_add_child(root, s_main_layer);
 
-  s_footer_layer = layer_create(GRect(0, h - h * 6 / 100 - 22, w, 22));
-  layer_set_update_proc(s_footer_layer, footer_update_proc);
-  layer_add_child(root, s_footer_layer);
-
   refresh_display();
 }
 
 static void window_unload(Window *window) {
   layer_destroy(s_main_layer);
-  layer_destroy(s_footer_layer);
 }
 
 static void wakeup_handler(WakeupId id, int32_t reason) {
