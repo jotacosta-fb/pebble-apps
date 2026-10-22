@@ -6,8 +6,8 @@ typeface. Author: Jota.
 
 | App | What it does | Version |
 | --- | --- | --- |
-| [_weather](_weather/) | Min/max temperature and precipitation for the day. Nothing else. | 2.1.3 |
-| [_battery](_battery/) | Battery percentage as days remaining, learned from the watch's own drain. | 2.0.1 |
+| [_weather](_weather/) | Min/max temperature and precipitation for the day. Nothing else. | 2.2.0 |
+| [_battery](_battery/) | Battery percentage as days remaining, learned from the watch's own drain. | 2.1.0 |
 | [_countdown](_countdown/) | A 45-minute countdown timer (adjustable), with a wakeup at zero. | 1.4.4 |
 | [_life](_life/) | Magic: The Gathering life counter, 20 to 0. | 1.9.4 |
 | [_watchface](_watchface/) | Watchface forked from Lean: huge tilted time, day/night aware, font-size setting. | 1.0.2 |
