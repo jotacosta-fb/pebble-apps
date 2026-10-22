@@ -1,8 +1,8 @@
 #include <pebble.h>
 
 // _timer — a countdown timer. Just the time, nothing else. The
-// state is marked on the time itself: a black box around the
-// minutes only ([45]:00) means ready to start; a giant light-grey
+// state is marked on the time itself: a thick underline under
+// the minutes only means ready to start; a giant light-grey
 // pause symbol behind the time means paused; a full black band
 // (blinking) means done; no mark means running. Defaults to 45:00. Up/Down adjust by one minute (hold to
 // repeat), Select starts/stops, holding Select resets to the set time.
@@ -223,7 +223,7 @@ static void main_update_proc(Layer *layer, GContext *ctx) {
   // State marks (user): ready boxes the minutes only — [45]:00;
   // done keeps the full black band; running has no mark. Paused is
   // marked by the backdrop layer behind everything (see below).
-  bool box_minutes = (s_state == ST_EDIT);
+  bool underline_minutes = (s_state == ST_EDIT);
   bool band_full = (s_state == ST_DONE);
   if (band_full) {
     graphics_context_set_fill_color(ctx, GColorBlack);
@@ -231,22 +231,20 @@ static void main_update_proc(Layer *layer, GContext *ctx) {
                        GRect(x - pad_x, glyph_top - pad_y, total + 2 * pad_x,
                              (glyph_bottom - glyph_top) + 2 * pad_y),
                        0, GCornerNone);
-  } else if (box_minutes) {
-    // Shifted a few px left (user: the box crowded the colon) —
-    // the minutes keep symmetric padding inside the box, the gap
-    // before the colon grows.
+  } else if (underline_minutes) {
+    // Thick underline under the minutes only (user, replacing the
+    // minutes box): spans the minutes' layout width, a few px
+    // below the glyph box.
     graphics_context_set_fill_color(ctx, GColorBlack);
     graphics_fill_rect(ctx,
-                       GRect(x - pad_x - 4, glyph_top - pad_y,
-                             min_sz.w + 2 * pad_x,
-                             (glyph_bottom - glyph_top) + 2 * pad_y),
+                       GRect(x, glyph_bottom + 3, min_sz.w, big ? 6 : 4),
                        0, GCornerNone);
   }
 
-  // Minutes are white only when boxed or banded; everything else
+  // Digits are white only inside the done band; everything else
   // is black on the plain screen.
-  GColor min_fg = (band_full || box_minutes) ? GColorWhite : GColorBlack;
-  GColor rest_fg = band_full ? GColorWhite : GColorBlack;
+  GColor min_fg = band_full ? GColorWhite : GColorBlack;
+  GColor rest_fg = min_fg;
   graphics_context_set_text_color(ctx, min_fg);
   graphics_draw_text(ctx, min_buf, font, GRect(x, 0, min_sz.w + 2, b.size.h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
