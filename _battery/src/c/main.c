@@ -9,6 +9,73 @@
 // by that rate. Until a rate is learned it assumes 15%/day.
 
 static Window *s_window;
+
+// ---------- Exit: notification-style corner collapse ----------
+// Pebble's notification-dismiss animation (the watchface redraws
+// in from the four corners) is firmware-only; apps only get the
+// plain slide. Rebuilt here as a mask: a top layer paints black
+// bands around a centered hole that collapses to the middle with
+// an ease-in-out curve, then the window pops unanimated — the
+// cut lands while the screen is essentially black. The content
+// itself never moves, so nothing underneath is disturbed.
+static Layer *s_mask_layer;
+static bool s_exiting;
+static int s_hole_w, s_hole_h;
+
+static void mask_update_proc(Layer *layer, GContext *ctx) {
+  if (!s_exiting) return;
+  GRect b = layer_get_bounds(layer);
+  int hx = (b.size.w - s_hole_w) / 2;
+  int hy = (b.size.h - s_hole_h) / 2;
+  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_fill_rect(ctx, GRect(0, 0, b.size.w, hy), 0, GCornerNone);
+  graphics_fill_rect(ctx, GRect(0, hy + s_hole_h, b.size.w,
+                                b.size.h - (hy + s_hole_h)),
+                     0, GCornerNone);
+  graphics_fill_rect(ctx, GRect(0, hy, hx, s_hole_h), 0, GCornerNone);
+  graphics_fill_rect(ctx, GRect(hx + s_hole_w, hy,
+                                b.size.w - (hx + s_hole_w), s_hole_h),
+                     0, GCornerNone);
+}
+
+static void exit_anim_update(Animation *animation,
+                             const AnimationProgress progress) {
+  int32_t t = (int32_t)progress;  // 0..65535
+  int32_t e;                      // easeInOutCubic, fixed point
+  if (t < 32768) {
+    e = (int32_t)((int64_t)4 * t * t * t / 65535 / 65535);
+  } else {
+    int32_t u = 65535 - t;
+    e = 65535 - (int32_t)((int64_t)4 * u * u * u / 65535 / 65535);
+  }
+  GRect b = layer_get_bounds(s_mask_layer);
+  s_hole_w = b.size.w - (int)(((int64_t)(b.size.w - 2) * e) / 65535);
+  s_hole_h = b.size.h - (int)(((int64_t)(b.size.h - 2) * e) / 65535);
+  layer_mark_dirty(s_mask_layer);
+}
+
+// File scope: animation_set_implementation keeps the pointer.
+static const AnimationImplementation s_exit_impl = {
+    .update = exit_anim_update};
+
+static void exit_anim_stopped(Animation *animation, bool finished,
+                              void *context) {
+  window_stack_pop(false);
+}
+
+static void start_exit(void) {
+  if (s_exiting) return;
+  s_exiting = true;
+  GRect b = layer_get_bounds(s_mask_layer);
+  s_hole_w = b.size.w;
+  s_hole_h = b.size.h;
+  Animation *a = animation_create();
+  animation_set_duration(a, 330);
+  animation_set_implementation(a, &s_exit_impl);
+  animation_set_handlers(
+      a, (AnimationHandlers){.stopped = exit_anim_stopped}, NULL);
+  animation_schedule(a);
+}
 static GFont s_f68, s_f48, s_f56, s_f40;  // LECO 1976 (custom font)
 static GFont s_p34, s_p28, s_p24, s_p20;  // LECO 1976 %-only fonts at HALF the digit heights (user: full size was too large)
 static Layer *s_pct_layer;
@@ -258,13 +325,19 @@ static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
 }
 
 static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
-  // Top button returns to the watchface (user request).
-  window_stack_pop(true);
+  // Top button returns to the watchface (user request), with the
+  // notification-dismiss corner collapse.
+  start_exit();
+}
+
+static void back_click_handler(ClickRecognizerRef recognizer, void *context) {
+  start_exit();
 }
 
 static void click_config_provider(void *context) {
   window_single_click_subscribe(BUTTON_ID_SELECT, select_click_handler);
   window_single_click_subscribe(BUTTON_ID_UP, up_click_handler);
+  window_single_click_subscribe(BUTTON_ID_BACK, back_click_handler);
 }
 
 // ---------- Window ----------
@@ -275,6 +348,9 @@ static void window_load(Window *window) {
   int w = b.size.w;
   int h = b.size.h;
   window_set_background_color(window, bg_color());
+
+  s_mask_layer = layer_create(b);
+  layer_set_update_proc(s_mask_layer, mask_update_proc);
 
   // Big current percentage over the big battery background —
   // one merged graphic now (the separate bottom icon is gone).
@@ -292,11 +368,13 @@ static void window_load(Window *window) {
 
   sample_battery();
   refresh_display();
+  layer_add_child(root, s_mask_layer);
 }
 
 static void window_unload(Window *window) {
   layer_destroy(s_pct_layer);
   layer_destroy(s_days_layer);
+  layer_destroy(s_mask_layer);
 }
 
 static void inbox_received(DictionaryIterator *iter, void *context) {
