@@ -28,6 +28,7 @@ static GFont s_f50;
 static GFont s_f70;  // emery-only (a 70 digit exceeds the 256B glyph cap elsewhere)
 #endif
 static Layer *s_main_layer;
+static Layer *s_back_layer;
 
 static int s_state = ST_EDIT;
 static int s_set_seconds = DEFAULT_SECONDS;
@@ -51,7 +52,10 @@ static void save_state(void) {
   persist_write_int(PK_REMAINING, s_remaining);
 }
 
-static void refresh_display(void) { layer_mark_dirty(s_main_layer); }
+static void refresh_display(void) {
+  layer_mark_dirty(s_main_layer);
+  if (s_back_layer) layer_mark_dirty(s_back_layer);
+}
 
 static void cancel_wakeup(void) {
   if (s_wakeup_id >= 0) {
@@ -217,18 +221,8 @@ static void main_update_proc(Layer *layer, GContext *ctx) {
   int glyph_bottom = min_sz.h * 98 / 100;
 
   // State marks (user): ready boxes the minutes only — [45]:00;
-  // paused puts a giant light-grey pause symbol behind the time;
-  // done keeps the full black band; running has no mark.
-  if (s_state == ST_PAUSED) {
-    int bw = big ? 20 : 13;
-    int bh = big ? 64 : 44;
-    int gap = big ? 16 : 11;
-    int bx = (b.size.w - (2 * bw + gap)) / 2;
-    int by = (glyph_top + glyph_bottom) / 2 - bh / 2;
-    graphics_context_set_fill_color(ctx, GColorLightGray);
-    graphics_fill_rect(ctx, GRect(bx, by, bw, bh), 0, GCornerNone);
-    graphics_fill_rect(ctx, GRect(bx + bw + gap, by, bw, bh), 0, GCornerNone);
-  }
+  // done keeps the full black band; running has no mark. Paused is
+  // marked by the backdrop layer behind everything (see below).
   bool box_minutes = (s_state == ST_EDIT);
   bool band_full = (s_state == ST_DONE);
   if (band_full) {
@@ -271,6 +265,24 @@ static void main_update_proc(Layer *layer, GContext *ctx) {
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
 }
 
+// ---------- Backdrop: the paused mark ----------
+// Full-screen layer behind the time: a giant light-grey pause
+// symbol (two bars), centered on the screen.
+static void back_update_proc(Layer *layer, GContext *ctx) {
+  if (s_state != ST_PAUSED) return;
+  GRect b = layer_get_bounds(layer);
+  bool big = b.size.w >= 180;
+  // Giant light-grey pause bars behind the time (user's pick).
+  int bw = big ? 34 : 22;
+  int bh = big ? 130 : 92;
+  int gap = big ? 26 : 18;
+  int bx = (b.size.w - (2 * bw + gap)) / 2;
+  int by = (b.size.h - bh) / 2;
+  graphics_context_set_fill_color(ctx, GColorLightGray);
+  graphics_fill_rect(ctx, GRect(bx, by, bw, bh), 0, GCornerNone);
+  graphics_fill_rect(ctx, GRect(bx + bw + gap, by, bw, bh), 0, GCornerNone);
+}
+
 static void window_load(Window *window) {
   Layer *root = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(root);
@@ -280,6 +292,10 @@ static void window_load(Window *window) {
 
   // Layer centered, then nudged up 2-3px: the digits sit a touch low
   // in their line box, so the box center isn't the visual center.
+  s_back_layer = layer_create(bounds);
+  layer_set_update_proc(s_back_layer, back_update_proc);
+  layer_add_child(root, s_back_layer);
+
   s_main_layer = layer_create(
       GRect(0, (h - main_h) / 2 - (w >= 180 ? 2 : 3), w, main_h));
   layer_set_update_proc(s_main_layer, main_update_proc);
@@ -290,6 +306,7 @@ static void window_load(Window *window) {
 
 static void window_unload(Window *window) {
   layer_destroy(s_main_layer);
+  layer_destroy(s_back_layer);
 }
 
 static void wakeup_handler(WakeupId id, int32_t reason) {
