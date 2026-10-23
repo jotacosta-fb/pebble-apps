@@ -123,6 +123,48 @@ static GFont pct_font_for(GFont df) {
   return s_p34;  // df == s_f68
 }
 
+// The main readout (v2.5.0, user: simplify): no % — the big
+// number IS the days left, with the battery fill behind it. The
+// % survives only while charging (days can't be predicted then)
+// and in the footer on the last day (see days_update_proc).
+static void draw_days_big(GContext *ctx, GRect b) {
+  bool big = b.size.w >= 180;
+  int box_y = b.size.h / 2 - (big ? 44 : 31);
+  int box_h = big ? 78 : 54;
+  if (s_days_x10 < 0) {
+    graphics_draw_text(ctx, "--", s_f48,
+                       GRect(s_wobble, box_y, b.size.w, box_h),
+                       GTextOverflowModeFill, GTextAlignmentCenter, NULL);
+    return;
+  }
+  char buf[8];
+  snprintf(buf, sizeof(buf), "%d.%d", s_days_x10 / 10, s_days_x10 % 10);
+  GFont font = big ? s_f68 : s_f48;
+  GFont word_font = fonts_get_system_font(
+      big ? FONT_KEY_GOTHIC_28_BOLD : FONT_KEY_GOTHIC_24_BOLD);
+  GRect measure = GRect(0, 0, 300, box_h);
+  GSize d_sz = graphics_text_layout_get_content_size(
+      buf, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
+  GSize w_sz = graphics_text_layout_get_content_size(
+      "days", word_font, measure, GTextOverflowModeFill,
+      GTextAlignmentLeft);
+  if (d_sz.w + 6 + w_sz.w > b.size.w - 6) {
+    font = big ? s_f56 : s_f40;
+    d_sz = graphics_text_layout_get_content_size(
+        buf, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
+  }
+  int total = d_sz.w + 6 + w_sz.w;
+  int x = (b.size.w - total) / 2 + s_wobble;
+  graphics_draw_text(ctx, buf, font, GRect(x, box_y, d_sz.w + 2, box_h),
+                     GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+  // "days" bottom-aligned with the digits, where the % used to sit.
+  int word_y = box_y + d_sz.h - w_sz.h;
+  if (word_y < box_y) word_y = box_y;
+  graphics_draw_text(ctx, "days", word_font,
+                     GRect(x + d_sz.w + 6, word_y, w_sz.w + 2, box_h),
+                     GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+}
+
 static void pct_update_proc(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
   bool big = b.size.w >= 180;
@@ -139,6 +181,11 @@ static void pct_update_proc(Layer *layer, GContext *ctx) {
                        GTextAlignmentCenter, NULL);
     return;
   }
+  if (!s_charging) {
+    draw_days_big(ctx, b);
+    return;
+  }
+
   // Digit box placed so the digits' visual center is the screen's
   // vertical center (this layer is full-screen now).
   int box_y = b.size.h / 2 - (big ? 44 : 31);
@@ -215,61 +262,33 @@ static void sample_battery(void) {
   s_days_x10 = s_pct * 100 / eff_rate;
 }
 
-// Days line is drawn, not a text layer, so the fractional part of the
-// float can be gray while the rest stays black: "5" + ".3" (gray) +
-// " days left". No tilde — user asked for plain float with gray fraction.
+// The footer (v2.5.0): empty in normal use — the days are the
+// big readout now. Two exceptions: "charging" while charging,
+// and on the last day (1.0 days left or under) the charge %,
+// the one moment the exact number beats the estimate.
 static void days_update_proc(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
   bool big = b.size.w >= 180;
   GFont font = fonts_get_system_font(
       FONT_KEY_GOTHIC_28);
 
-  if (s_charging || s_days_x10 < 0) {
+  if (s_charging) {
     graphics_context_set_text_color(ctx, ink_color());
-    graphics_draw_text(ctx, s_charging ? "charging" : "-- days", font,
+    graphics_draw_text(ctx, "charging", font,
                        GRect(s_wobble, 0, b.size.w, b.size.h),
                        GTextOverflowModeFill, GTextAlignmentCenter, NULL);
     return;
   }
 
-  char int_buf[8], frac_buf[8];
-  const char *suffix = " days";  // "left" removed at user request
-  snprintf(int_buf, sizeof(int_buf), "%d", s_days_x10 / 10);
-  snprintf(frac_buf, sizeof(frac_buf), ".%d", s_days_x10 % 10);
-
-  GRect measure = GRect(0, 0, 300, b.size.h);
-  GSize i_sz = graphics_text_layout_get_content_size(
-      int_buf, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
-  GSize f_sz = graphics_text_layout_get_content_size(
-      frac_buf, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
-  GSize s_sz = graphics_text_layout_get_content_size(
-      suffix, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
-
-  if (i_sz.w + f_sz.w + s_sz.w > b.size.w - 4) {
-    // Long prediction: drop the header one size so nothing clips.
-    font = fonts_get_system_font(
-        FONT_KEY_GOTHIC_24);
-    i_sz = graphics_text_layout_get_content_size(
-        int_buf, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
-    f_sz = graphics_text_layout_get_content_size(
-        frac_buf, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
-    s_sz = graphics_text_layout_get_content_size(
-        suffix, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
+  if (s_days_x10 >= 0 && s_days_x10 <= 10 && s_pct >= 0) {
+    char pct_buf[8];
+    snprintf(pct_buf, sizeof(pct_buf), "%d%%", s_pct);
+    graphics_context_set_text_color(ctx, ink_color());
+    graphics_draw_text(ctx, pct_buf, font,
+                       GRect(s_wobble, 0, b.size.w, b.size.h),
+                       GTextOverflowModeFill, GTextAlignmentCenter, NULL);
   }
 
-  int x = (b.size.w - (i_sz.w + f_sz.w + s_sz.w)) / 2 + s_wobble;
-  graphics_context_set_text_color(ctx, ink_color());
-  graphics_draw_text(ctx, int_buf, font, GRect(x, 0, i_sz.w + 2, b.size.h),
-                     GTextOverflowModeFill, GTextAlignmentLeft, NULL);
-  x += i_sz.w;
-  graphics_context_set_text_color(ctx,
-                             s_night ? GColorLightGray : GColorDarkGray);
-  graphics_draw_text(ctx, frac_buf, font, GRect(x, 0, f_sz.w + 2, b.size.h),
-                     GTextOverflowModeFill, GTextAlignmentLeft, NULL);
-  x += f_sz.w;
-  graphics_context_set_text_color(ctx, ink_color());
-  graphics_draw_text(ctx, suffix, font, GRect(x, 0, s_sz.w + 2, b.size.h),
-                     GTextOverflowModeFill, GTextAlignmentLeft, NULL);
 }
 
 static void refresh_display(void) {
