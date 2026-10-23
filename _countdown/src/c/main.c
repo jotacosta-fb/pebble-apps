@@ -185,28 +185,34 @@ static void main_update_proc(Layer *layer, GContext *ctx) {
   snprintf(sec_buf, sizeof(sec_buf), "%02d", total_s % 60);
 
   GRect measure = GRect(0, 0, 300, b.size.h);
+  // The font is chosen from the WIDEST strings the timer can show
+  // ("44:44"), never from the digits currently on screen: measuring
+  // the actual string let narrow digits keep a bigger font (user
+  // bug: 41:00 rendered larger than 45:00). One size for all times.
+  int colon_w = big ? 24 : 18;  // widened: the minutes box crowded the colon
+  for (;;) {
+    GSize pmin = graphics_text_layout_get_content_size(
+        "44", font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
+    GSize psec = graphics_text_layout_get_content_size(
+        "44", font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
+    if (pmin.w + colon_w + psec.w <= b.size.w - 6) break;
+    GFont next = font;
+#if defined(PBL_PLATFORM_EMERY)
+    if (font == s_f70) next = big ? s_f56 : s_f47;
+    else
+#endif
+    if (font == s_f66) next = big ? s_f56 : s_f47;
+    else if (font == s_f50) next = s_f47;
+    else if (font == s_f47) next = s_f40;
+    if (next == font) break;
+    font = next;
+  }
   GSize min_sz = graphics_text_layout_get_content_size(
       min_buf, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
   GSize sec_sz = graphics_text_layout_get_content_size(
       sec_buf, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
-  int colon_w = big ? 24 : 18;  // widened: the minutes box crowded the colon
   int total = min_sz.w + colon_w + sec_sz.w;
-  if (total > b.size.w - 6) {
-    font = big ? s_f56 : s_f47;
-    min_sz = graphics_text_layout_get_content_size(
-        min_buf, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
-    sec_sz = graphics_text_layout_get_content_size(
-        sec_buf, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
-    total = min_sz.w + colon_w + sec_sz.w;
-    if (!big && total > b.size.w - 6) {
-      font = s_f40;
-      min_sz = graphics_text_layout_get_content_size(
-          min_buf, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
-      sec_sz = graphics_text_layout_get_content_size(
-          sec_buf, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
-      total = min_sz.w + colon_w + sec_sz.w;
-    }
-  }
+  (void)total_s;
 
   int x = (b.size.w - total) / 2;
   // Decorations hug the glyph box (LECO glyphs span ~30%-98% of

@@ -123,11 +123,31 @@ static bool s_have_data = false;
 #define PERSIST_PRECIP 3
 #define PERSIST_CODE 5
 #define PERSIST_NIGHT 6
+#define PERSIST_SUNRISE 7
+#define PERSIST_SUNSET 8
 
 // Night mode (user): after sunset the face inverts — black
 // background, white ink. The JS sends NIGHT with each fetch,
 // computed from Open-Meteo's sunrise/sunset for today.
 static bool s_night = false;
+static int s_sunrise = 0, s_sunset = 0;  // epochs from the phone
+static void refresh_display(void);
+
+// Recompute day/night from the stored sunrise/sunset and the
+// current time: the apps now react to time passing (a minute
+// tick) instead of only flipping when a phone message arrives.
+static void eval_night(void) {
+  if (s_sunrise > 0 && s_sunset > s_sunrise) {
+    time_t now = time(NULL);
+    s_night = (now < s_sunrise || now >= s_sunset);
+  }
+}
+
+static void tick_handler(struct tm *tick_time, TimeUnits units) {
+  bool was = s_night;
+  eval_night();
+  if (s_night != was) refresh_display();
+}
 static GColor ink_color(void) { return s_night ? GColorWhite : GColorBlack; }
 static GColor bg_color(void) { return s_night ? GColorBlack : GColorWhite; }
 
@@ -629,6 +649,15 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
   Tuple *t_min = dict_find(iter, MESSAGE_KEY_TEMP_MIN);
   Tuple *t_precip = dict_find(iter, MESSAGE_KEY_PRECIP);
   Tuple *t_code = dict_find(iter, MESSAGE_KEY_CODE);
+  Tuple *t_rise = dict_find(iter, MESSAGE_KEY_SUNRISE);
+  Tuple *t_set = dict_find(iter, MESSAGE_KEY_SUNSET);
+  if (t_rise && t_set) {
+    s_sunrise = (int)t_rise->value->int32;
+    s_sunset = (int)t_set->value->int32;
+    persist_write_int(PERSIST_SUNRISE, s_sunrise);
+    persist_write_int(PERSIST_SUNSET, s_sunset);
+    eval_night();
+  }
   Tuple *t_night = dict_find(iter, MESSAGE_KEY_NIGHT);
 
   if (t_night) {
@@ -752,6 +781,11 @@ static void init(void) {
   if (persist_exists(PERSIST_NIGHT)) {
     s_night = persist_read_int(PERSIST_NIGHT) != 0;
   }
+  if (persist_exists(PERSIST_SUNRISE)) {
+    s_sunrise = persist_read_int(PERSIST_SUNRISE);
+    s_sunset = persist_read_int(PERSIST_SUNSET);
+    eval_night();
+  }
   if (persist_exists(PERSIST_TEMP_MAX)) {
     s_temp_max = persist_read_int(PERSIST_TEMP_MAX);
     s_temp_min = persist_read_int(PERSIST_TEMP_MIN);
@@ -767,6 +801,7 @@ static void init(void) {
   });
   window_set_click_config_provider(s_window, click_config_provider);
   window_stack_push(s_window, true);
+  tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
 
   app_message_register_inbox_received(inbox_received);
   app_message_open(256, 64);

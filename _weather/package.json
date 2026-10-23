@@ -17,7 +17,9 @@
       "PRECIP",
       "CODE",
       "REQUEST",
-      "NIGHT"
+      "NIGHT",
+      "SUNRISE",
+      "SUNSET"
     ],
     "resources": {
       "media": [
@@ -175,5 +177,5 @@
       "watchface": false
     }
   },
-  "version": "2.3.0"
+  "version": "2.4.0"
 }

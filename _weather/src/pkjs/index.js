@@ -37,7 +37,9 @@ function fetchWeather() {
             'TEMP_MIN': Math.round(j.daily.temperature_2m_min[0]),
             'PRECIP': Math.round(precip),
             'CODE': j.current.weather_code,
-            'NIGHT': night
+            'NIGHT': night,
+            'SUNRISE': j.daily.sunrise[0],
+            'SUNSET': j.daily.sunset[0]
           }, function () {
             console.log('Weather sent');
           }, function (e) {

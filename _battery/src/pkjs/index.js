@@ -15,7 +15,7 @@ function fetchNight() {
           var j = JSON.parse(this.responseText);
           var now = Math.floor(Date.now() / 1000);
           var night = (now < j.daily.sunrise[0] || now >= j.daily.sunset[0]) ? 1 : 0;
-          Pebble.sendAppMessage({ 'NIGHT': night }, function () {
+          Pebble.sendAppMessage({ 'NIGHT': night, 'SUNRISE': j.daily.sunrise[0], 'SUNSET': j.daily.sunset[0] }, function () {
             console.log('Night sent: ' + night);
           }, function (e) {
             console.log('Send failed: ' + JSON.stringify(e));
