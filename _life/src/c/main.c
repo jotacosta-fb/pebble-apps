@@ -43,11 +43,13 @@ static int s_life = START_LIFE;
 
 // Appear wobble (user, v1.10.0 — the family motion from
 // _weather/_battery): when the app comes to the front, the total
-// swings sideways and settles — one full sine swing with a
-// linear decay, starting and ending at 0, so the resting display
-// is unchanged. The +/- markers stay put (like _battery's
-// battery body). s_wobble is the current offset in px. Any
-// button press stops it, and the reset animation cancels it too.
+// wobbles and settles — one full sine swing with a linear decay,
+// starting and ending at 0, so the resting display is unchanged.
+// The digits split around the centre (v1.10.1, like _battery
+// around its dot): left goes left, right goes right. The +/-
+// markers stay put (like _battery's battery body). s_wobble is
+// the current offset in px. Any button press stops it, and the
+// reset animation cancels it too.
 static int s_wobble;
 #define WOBBLE_AMP 10
 static void wobble_stop(void);  // defined with the animation code below
@@ -182,13 +184,20 @@ static void draw_value(GContext *ctx, GRect b, int value) {
                       : (n >= 3 ? s_d64 : s_d86);
   int adv = S * 63 / 100;
   int ink_h = S * 70 / 100;
-  int x = (b.size.w - n * adv) / 2 + S * 7 / 100 + s_wobble;
+  int x = (b.size.w - n * adv) / 2 + S * 7 / 100;
   int y = (b.size.h - ink_h) / 2;
   graphics_context_set_compositing_mode(ctx, GCompOpSet);
   for (int i = 0; i < n; i++) {
+    // The wobble splits the total around its centre (user,
+    // v1.10.1 — like _battery's split around the dot): the left
+    // digits slide left, the right digits right, a digit sitting
+    // on the centre (odd counts) stays. One digit: it IS the
+    // centre, so it stays too.
+    int off = (n > 1) ? (2 * i - (n - 1)) * s_wobble / (n - 1) : 0;
     GBitmap *bmp = set[buf[i] - '0'];
     GSize bs = gbitmap_get_bounds(bmp).size;
-    graphics_draw_bitmap_in_rect(ctx, bmp, GRect(x + i * adv, y, bs.w, bs.h));
+    graphics_draw_bitmap_in_rect(ctx, bmp,
+                                 GRect(x + i * adv + off, y, bs.w, bs.h));
   }
 }
 

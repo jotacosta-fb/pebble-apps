@@ -37,16 +37,18 @@ static time_t s_end_time = 0;
 static WakeupId s_wakeup_id = -1;
 static bool s_blink_on = true;
 
-// Appear wobble (user, v1.5.0 — the family motion from
-// _weather/_battery brought here): when the app comes to the
-// front, the time swings sideways and settles — one full sine
-// swing with a linear decay, starting and ending at 0, so the
-// resting display is unchanged. s_wobble is the current offset
-// in px. Any button press stops it (the digits are the controls'
-// readout; they should sit still while being set).
+// Underline wobble (user, v1.5.0; re-scoped v1.5.1): the family
+// motion, but ONLY the ready underline moves — the time itself
+// sits still. It runs when the app is shown and on reset, the
+// two moments the underline (re)appears; if no underline is
+// visible (restored running/paused/done), nothing animates.
+// One full sine swing with a linear decay, starting and ending
+// at 0, so the resting display is unchanged. s_wobble is the
+// current offset in px. Any button press stops it.
 static int s_wobble;
 #define WOBBLE_AMP 10
-static void wobble_stop(void);  // defined with the animation code below
+static void wobble_stop(void);   // defined with the animation code below
+static void start_wobble(void);  // defined with the animation code below
 
 static int display_seconds(void) {
   if (s_state == ST_RUNNING) {
@@ -129,6 +131,7 @@ static void reset_timer(void) {
   cancel_wakeup();
   save_state();
   refresh_display();
+  start_wobble();  // the underline is back: it wobbles (user, v1.5.1)
 }
 
 static void select_click_handler(ClickRecognizerRef recognizer,
@@ -228,7 +231,7 @@ static void main_update_proc(Layer *layer, GContext *ctx) {
   int total = min_sz.w + colon_w + sec_sz.w;
   (void)total_s;
 
-  int x = (b.size.w - total) / 2 + s_wobble;
+  int x = (b.size.w - total) / 2;
   // Decorations hug the glyph box (LECO glyphs span ~30%-98% of
   // their line height) with a little padding. Padding shrinks if
   // the (wide) time would push a box to the screen edges — boxes
@@ -257,7 +260,8 @@ static void main_update_proc(Layer *layer, GContext *ctx) {
     // below the glyph box (lowered 2px more in v1.5.0, user).
     graphics_context_set_fill_color(ctx, GColorBlack);
     graphics_fill_rect(ctx,
-                       GRect(x, glyph_bottom + 5, min_sz.w, big ? 6 : 4),
+                       GRect(x + s_wobble, glyph_bottom + 5, min_sz.w,
+                             big ? 6 : 4),
                        0, GCornerNone);
   }
 
@@ -340,7 +344,11 @@ static void start_wobble(void) {
   animation_schedule(a);
 }
 
-static void window_appear(Window *window) { start_wobble(); }
+static void window_appear(Window *window) {
+  // Shown with no underline (restored running/paused/done):
+  // don't animate (user, v1.5.1).
+  if (s_state == ST_EDIT) start_wobble();
+}
 
 // ---------- Backdrop: the paused mark ----------
 // Full-screen layer behind the time: a giant light-grey pause
