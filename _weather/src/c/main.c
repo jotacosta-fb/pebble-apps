@@ -11,7 +11,7 @@ static Window *s_window;
 // ---------- Exit: fade to black ----------
 // On exit (Up or Back) the screen dips to black: a top veil
 // layer blackens pixels in a 4x4 Bayer pattern, density ramping
-// to full over ~200 ms, then the window pops unanimated while
+// to full over ~100 ms, then the window pops unanimated while
 // fully black (a final timer lets the black frame land first).
 // The content itself is never touched.
 static Layer *s_veil_layer;
@@ -60,7 +60,7 @@ static void start_fade(void) {
   if (s_fading) return;
   s_fading = true;
   Animation *a = animation_create();
-  animation_set_duration(a, 200);
+  animation_set_duration(a, 100);
   animation_set_implementation(a, &s_fade_impl);
   animation_set_handlers(
       a, (AnimationHandlers){.stopped = fade_anim_stopped}, NULL);
