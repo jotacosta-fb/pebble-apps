@@ -41,6 +41,17 @@ static const uint32_t RES_D64[10] = {
 
 static int s_life = START_LIFE;
 
+// Appear wobble (user, v1.10.0 — the family motion from
+// _weather/_battery): when the app comes to the front, the total
+// swings sideways and settles — one full sine swing with a
+// linear decay, starting and ending at 0, so the resting display
+// is unchanged. The +/- markers stay put (like _battery's
+// battery body). s_wobble is the current offset in px. Any
+// button press stops it, and the reset animation cancels it too.
+static int s_wobble;
+#define WOBBLE_AMP 10
+static void wobble_stop(void);  // defined with the animation code below
+
 // Green at 20+, red at 0 and below; the tint routes through yellow
 // (20→10 green→yellow, 10→0 yellow→red) so the middle reads as a
 // warning instead of a muddy brown.
@@ -77,6 +88,7 @@ static void anim_cancel(void);  // defined with the animation code below
 
 static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
   anim_cancel();
+  wobble_stop();
   if (s_life < MAX_LIFE) {
     s_life++;
   } else {
@@ -88,6 +100,7 @@ static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
 
 static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
   anim_cancel();
+  wobble_stop();
   // Floor is 0 (user): it shows as a plain "0" and goes no lower.
   if (s_life > 0) {
     s_life--;
@@ -169,7 +182,7 @@ static void draw_value(GContext *ctx, GRect b, int value) {
                       : (n >= 3 ? s_d64 : s_d86);
   int adv = S * 63 / 100;
   int ink_h = S * 70 / 100;
-  int x = (b.size.w - n * adv) / 2 + S * 7 / 100;
+  int x = (b.size.w - n * adv) / 2 + S * 7 / 100 + s_wobble;
   int y = (b.size.h - ink_h) / 2;
   graphics_context_set_compositing_mode(ctx, GCompOpSet);
   for (int i = 0; i < n; i++) {
@@ -178,6 +191,65 @@ static void draw_value(GContext *ctx, GRect b, int value) {
     graphics_draw_bitmap_in_rect(ctx, bmp, GRect(x + i * adv, y, bs.w, bs.h));
   }
 }
+
+// ---------- Appear wobble ----------
+// One full sine swing with a linear decay: the offset starts at
+// 0 (the app is already on screen), swings one way, back past
+// centre smaller, and settles at 0. Delayed 250 ms so the
+// system's launch slide finishes first — the recipe the user
+// approved on _watchface and the sibling apps use. The stopped
+// handler zeroes the offset, so the resting display is
+// unchanged.
+
+static bool s_wobble_running;
+static Animation *s_wobble_anim;
+
+static void wobble_update(Animation *animation,
+                          const AnimationProgress progress) {
+  int32_t t = (int32_t)progress;            // 0..65535
+  int32_t angle = (int32_t)(((int64_t)t * TRIG_MAX_ANGLE) >> 16);
+  int32_t sn = cos_lookup(angle - TRIG_MAX_ANGLE / 4);  // sin, Q16
+  s_wobble = (int)((int64_t)WOBBLE_AMP * sn * (65536 - t) /
+                   ((int64_t)65536 * 65536));
+  if (s_main_layer) layer_mark_dirty(s_main_layer);
+}
+
+// File scope: animation_set_implementation keeps the pointer.
+static const AnimationImplementation s_wobble_impl = {
+    .update = wobble_update};
+
+static void wobble_stopped(Animation *animation, bool finished,
+                           void *context) {
+  s_wobble_running = false;
+  s_wobble_anim = NULL;
+  s_wobble = 0;
+  if (s_main_layer) layer_mark_dirty(s_main_layer);
+}
+
+static void wobble_stop(void) {
+  if (!s_wobble_running) return;
+  Animation *a = s_wobble_anim;
+  s_wobble_anim = NULL;
+  s_wobble_running = false;
+  s_wobble = 0;
+  if (a) animation_unschedule(a);  // may re-enter wobble_stopped; state already zeroed
+  if (s_main_layer) layer_mark_dirty(s_main_layer);
+}
+
+static void start_wobble(void) {
+  if (s_wobble_running) return;
+  s_wobble_running = true;
+  Animation *a = animation_create();
+  s_wobble_anim = a;
+  animation_set_delay(a, 250);     // user: wobble delay 250 ms
+  animation_set_duration(a, 400);  // user: wobble length 400 ms
+  animation_set_implementation(a, &s_wobble_impl);
+  animation_set_handlers(
+      a, (AnimationHandlers){.stopped = wobble_stopped}, NULL);
+  animation_schedule(a);
+}
+
+static void window_appear(Window *window) { start_wobble(); }
 
 // ---------- Reset animation: black out, then white ----------
 // Holding Select runs a two-phase refresh (user spec): a BLACK disc
@@ -231,6 +303,7 @@ static void anim_frame(void *context) {
 }
 
 static void anim_start(void) {
+  wobble_stop();
   s_anim_from = s_life;
   s_life = START_LIFE;
   persist_write_int(PK_LIFE, s_life);
@@ -319,6 +392,7 @@ static void init(void) {
   window_set_click_config_provider(s_window, click_config_provider);
   window_set_window_handlers(s_window, (WindowHandlers){
                                            .load = window_load,
+                                           .appear = window_appear,
                                            .unload = window_unload,
                                        });
   window_stack_push(s_window, true);

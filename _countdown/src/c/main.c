@@ -37,6 +37,17 @@ static time_t s_end_time = 0;
 static WakeupId s_wakeup_id = -1;
 static bool s_blink_on = true;
 
+// Appear wobble (user, v1.5.0 — the family motion from
+// _weather/_battery brought here): when the app comes to the
+// front, the time swings sideways and settles — one full sine
+// swing with a linear decay, starting and ending at 0, so the
+// resting display is unchanged. s_wobble is the current offset
+// in px. Any button press stops it (the digits are the controls'
+// readout; they should sit still while being set).
+static int s_wobble;
+#define WOBBLE_AMP 10
+static void wobble_stop(void);  // defined with the animation code below
+
 static int display_seconds(void) {
   if (s_state == ST_RUNNING) {
     int left = (int)(s_end_time - time(NULL));
@@ -122,6 +133,7 @@ static void reset_timer(void) {
 
 static void select_click_handler(ClickRecognizerRef recognizer,
                                  void *context) {
+  wobble_stop();
   if (s_state == ST_RUNNING) {
     pause_timer();
   } else if (s_state == ST_DONE) {
@@ -133,11 +145,13 @@ static void select_click_handler(ClickRecognizerRef recognizer,
 
 static void select_long_handler(ClickRecognizerRef recognizer,
                                 void *context) {
+  wobble_stop();
   reset_timer();
   vibes_short_pulse();
 }
 
 static void adjust_minutes(int delta) {
+  wobble_stop();
   if (s_state == ST_RUNNING || s_state == ST_DONE) return;
   int value = s_remaining + delta * 60;
   if (value < MIN_SET_SECONDS) value = MIN_SET_SECONDS;
@@ -214,7 +228,7 @@ static void main_update_proc(Layer *layer, GContext *ctx) {
   int total = min_sz.w + colon_w + sec_sz.w;
   (void)total_s;
 
-  int x = (b.size.w - total) / 2;
+  int x = (b.size.w - total) / 2 + s_wobble;
   // Decorations hug the glyph box (LECO glyphs span ~30%-98% of
   // their line height) with a little padding. Padding shrinks if
   // the (wide) time would push a box to the screen edges — boxes
@@ -240,10 +254,10 @@ static void main_update_proc(Layer *layer, GContext *ctx) {
   } else if (underline_minutes) {
     // Thick underline under the minutes only (user, replacing the
     // minutes box): spans the minutes' layout width, a few px
-    // below the glyph box.
+    // below the glyph box (lowered 2px more in v1.5.0, user).
     graphics_context_set_fill_color(ctx, GColorBlack);
     graphics_fill_rect(ctx,
-                       GRect(x, glyph_bottom + 3, min_sz.w, big ? 6 : 4),
+                       GRect(x, glyph_bottom + 5, min_sz.w, big ? 6 : 4),
                        0, GCornerNone);
   }
 
@@ -268,6 +282,65 @@ static void main_update_proc(Layer *layer, GContext *ctx) {
                      GRect(x + min_sz.w + colon_w, 0, sec_sz.w + 2, b.size.h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
 }
+
+// ---------- Appear wobble ----------
+// One full sine swing with a linear decay: the offset starts at
+// 0 (the app is already on screen), swings one way, back past
+// centre smaller, and settles at 0. Delayed 250 ms so the
+// system's launch slide finishes first — the recipe the user
+// approved on _watchface and the sibling apps use. The stopped
+// handler zeroes the offset, so the resting display is
+// unchanged.
+
+static bool s_wobble_running;
+static Animation *s_wobble_anim;
+
+static void wobble_update(Animation *animation,
+                          const AnimationProgress progress) {
+  int32_t t = (int32_t)progress;            // 0..65535
+  int32_t angle = (int32_t)(((int64_t)t * TRIG_MAX_ANGLE) >> 16);
+  int32_t sn = cos_lookup(angle - TRIG_MAX_ANGLE / 4);  // sin, Q16
+  s_wobble = (int)((int64_t)WOBBLE_AMP * sn * (65536 - t) /
+                   ((int64_t)65536 * 65536));
+  if (s_main_layer) layer_mark_dirty(s_main_layer);
+}
+
+// File scope: animation_set_implementation keeps the pointer.
+static const AnimationImplementation s_wobble_impl = {
+    .update = wobble_update};
+
+static void wobble_stopped(Animation *animation, bool finished,
+                           void *context) {
+  s_wobble_running = false;
+  s_wobble_anim = NULL;
+  s_wobble = 0;
+  if (s_main_layer) layer_mark_dirty(s_main_layer);
+}
+
+static void wobble_stop(void) {
+  if (!s_wobble_running) return;
+  Animation *a = s_wobble_anim;
+  s_wobble_anim = NULL;
+  s_wobble_running = false;
+  s_wobble = 0;
+  if (a) animation_unschedule(a);  // may re-enter wobble_stopped; state already zeroed
+  if (s_main_layer) layer_mark_dirty(s_main_layer);
+}
+
+static void start_wobble(void) {
+  if (s_wobble_running) return;
+  s_wobble_running = true;
+  Animation *a = animation_create();
+  s_wobble_anim = a;
+  animation_set_delay(a, 250);     // user: wobble delay 250 ms
+  animation_set_duration(a, 400);  // user: wobble length 400 ms
+  animation_set_implementation(a, &s_wobble_impl);
+  animation_set_handlers(
+      a, (AnimationHandlers){.stopped = wobble_stopped}, NULL);
+  animation_schedule(a);
+}
+
+static void window_appear(Window *window) { start_wobble(); }
 
 // ---------- Backdrop: the paused mark ----------
 // Full-screen layer behind the time: a giant light-grey pause
@@ -360,6 +433,7 @@ static void init(void) {
   window_set_click_config_provider(s_window, click_config_provider);
   window_set_window_handlers(s_window, (WindowHandlers){
                                            .load = window_load,
+                                           .appear = window_appear,
                                            .unload = window_unload,
                                        });
   window_stack_push(s_window, true);
