@@ -171,6 +171,12 @@ static char s_mday_text[4] = "";
 
 // Masken, 1 Bit je Pixel, Zeilenlaenge = Framebufferbreite
 static uint8_t s_mask[(FB_MAX_W * FB_MAX_H + 7) / 8];
+// _watchface fly-in: while the appear animation runs, the time
+// mask is sampled with a horizontal source offset — the hour row
+// (above the block centre) flies in from the left, the minute row
+// from the right. Both are 0 at rest, rendering is then original.
+static int s_fly_off_l, s_fly_off_r;
+#define FLY_DIST 120  // source pixels of travel
 static uint8_t s_date_mask[(FB_MAX_W * FB_MAX_H + 7) / 8];
 
 // Umriss der Tinte, Grenzen inklusive. Leer, solange x1 < x0.
@@ -636,7 +642,9 @@ static void render_rotated(GBitmap *fb, const Frame *f, bool with_date) {
       for (int i = 0; i < 4; i++) {
         int px = (sx + off_x[i]) >> 16;
         int py = (sy + off_y[i]) >> 16;
-        int hit = bit_get(s_mask, px, py, w, h);
+        int ox = (s_fly_off_l | s_fly_off_r)
+                     ? ((py < f->src_cy) ? s_fly_off_l : s_fly_off_r) : 0;
+        int hit = bit_get(s_mask, px + ox, py, w, h);
         if (!hit && with_date) hit = date_get(px - f->src_cx, py - f->src_cy, w, h);
         cov += hit;
       }
@@ -1021,6 +1029,53 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
   layer_mark_dirty(s_canvas);
 }
 
+// --------------------------------------------------------------- Einflug
+// Appear animation (user): when the face comes to the front, the
+// two number rows fly in from the sides and settle — easeOutBack
+// (fast approach, a few px of overshoot, settle), 550 ms. The
+// offsets only exist while this runs; the stopped handler zeroes
+// them, so the resting face renders exactly as before.
+
+static bool s_fly_running;
+
+static void fly_anim_update(Animation *animation,
+                            const AnimationProgress progress) {
+  int32_t t = (int32_t)progress;            // 0..65535
+  int32_t u = t - 65536;                    // t-1, Q16
+  int32_t u2 = (int32_t)(((int64_t)u * u) >> 16);
+  int32_t u3 = (int32_t)(((int64_t)u2 * u) >> 16);
+  int32_t e = 65536 + 2 * u3 + u2;          // easeOutBack c1=1, c3=2
+  int mag = (int)((int64_t)FLY_DIST * (65536 - e) / 65536);
+  s_fly_off_l = mag;
+  s_fly_off_r = -mag;
+  layer_mark_dirty(s_canvas);
+}
+
+// File scope: animation_set_implementation keeps the pointer.
+static const AnimationImplementation s_fly_impl = {
+    .update = fly_anim_update};
+
+static void fly_anim_stopped(Animation *animation, bool finished,
+                             void *context) {
+  s_fly_running = false;
+  s_fly_off_l = 0;
+  s_fly_off_r = 0;
+  layer_mark_dirty(s_canvas);
+}
+
+static void start_fly(void) {
+  if (s_fly_running) return;
+  s_fly_running = true;
+  Animation *a = animation_create();
+  animation_set_duration(a, 550);
+  animation_set_implementation(a, &s_fly_impl);
+  animation_set_handlers(
+      a, (AnimationHandlers){.stopped = fly_anim_stopped}, NULL);
+  animation_schedule(a);
+}
+
+static void window_appear(Window *window) { start_fly(); }
+
 // --------------------------------------------------------------- Fenster
 
 static void window_load(Window *window) {
@@ -1052,6 +1107,7 @@ static void init(void) {
   window_set_background_color(s_window, s_color_bg);
   window_set_window_handlers(s_window, (WindowHandlers){
     .load = window_load,
+    .appear = window_appear,
     .unload = window_unload,
   });
   window_stack_push(s_window, false);
