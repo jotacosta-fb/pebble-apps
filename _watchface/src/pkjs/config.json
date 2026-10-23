@@ -21,11 +21,11 @@
         "defaultValue": "0",
         "options": [
           {
-            "label": "Left wrist  \u00b7  the time turns clockwise",
+            "label": "Left wrist  ·  the time turns clockwise",
             "value": "0"
           },
           {
-            "label": "Right wrist  \u00b7  the time turns counter-clockwise",
+            "label": "Right wrist  ·  the time turns counter-clockwise",
             "value": "1"
           }
         ]
@@ -74,31 +74,31 @@
             "value": "0"
           },
           {
-            "label": "English  \u00b7  MO TU WE",
+            "label": "English  ·  MO TU WE",
             "value": "1"
           },
           {
-            "label": "Deutsch  \u00b7  MO DI MI",
+            "label": "Deutsch  ·  MO DI MI",
             "value": "2"
           },
           {
-            "label": "Fran\u00e7ais  \u00b7  LU MA ME",
+            "label": "Français  ·  LU MA ME",
             "value": "3"
           },
           {
-            "label": "Espa\u00f1ol  \u00b7  LU MA MI",
+            "label": "Español  ·  LU MA MI",
             "value": "4"
           },
           {
-            "label": "Italiano  \u00b7  LU MA ME",
+            "label": "Italiano  ·  LU MA ME",
             "value": "5"
           },
           {
-            "label": "Portugu\u00eas  \u00b7  SEG TER QUA",
+            "label": "Português  ·  SEG TER QUA",
             "value": "6"
           },
           {
-            "label": "Nederlands  \u00b7  MA DI WO",
+            "label": "Nederlands  ·  MA DI WO",
             "value": "7"
           }
         ]
@@ -116,7 +116,7 @@
         "type": "slider",
         "messageKey": "FONTSIZE",
         "label": "Font size",
-        "description": "In percent \u2014 100 is the standard size. The tilted block still shrinks to fit at steep angles.",
+        "description": "In percent — 100 is the standard size. The tilted block still shrinks to fit at steep angles.",
         "defaultValue": 100,
         "min": 60,
         "max": 140,
@@ -128,6 +128,16 @@
         "label": "Night mode",
         "description": "After sunset the face switches to white digits on black, whatever colours you picked below; yours come back at sunrise. The watch works sunrise and sunset out itself from your location (the phone sends it once), so there is no nightly phone traffic.",
         "defaultValue": true
+      },
+      {
+        "type": "slider",
+        "messageKey": "ANIMDELAY",
+        "label": "Wobble delay",
+        "description": "When the face appears, the numbers wobble after this delay, in milliseconds. 400 is the standard — it lets the system's transition finish first. Lower it if the wobble feels late, raise it if a slow transition still covers the start.",
+        "defaultValue": 400,
+        "min": 0,
+        "max": 1500,
+        "step": 50
       }
     ]
   },
