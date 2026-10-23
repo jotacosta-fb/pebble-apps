@@ -1076,6 +1076,15 @@ static void start_fly(void) {
 
 static void window_appear(Window *window) { start_fly(); }
 
+// On real hardware the face does NOT get window_appear when an
+// app above it closes (it is restored under the system's exit
+// transition) — the user only saw the fly-in at face start. The
+// focus service is the hook that fires when the face actually
+// becomes visible again, so the flight hangs on it too.
+static void focus_handler(bool in_focus) {
+  if (in_focus) start_fly();
+}
+
 // --------------------------------------------------------------- Fenster
 
 static void window_load(Window *window) {
@@ -1111,6 +1120,8 @@ static void init(void) {
     .unload = window_unload,
   });
   window_stack_push(s_window, false);
+  app_focus_service_subscribe_handlers((AppFocusHandlers){
+      .did_focus = focus_handler});
 
   tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
 
@@ -1119,6 +1130,7 @@ static void init(void) {
 }
 
 static void deinit(void) {
+  app_focus_service_unsubscribe();
   tick_timer_service_unsubscribe();
   window_destroy(s_window);
   fonts_unload_custom_font(s_digit_font);
