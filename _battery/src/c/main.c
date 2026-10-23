@@ -16,8 +16,9 @@ static GFont s_p34, s_p28, s_p24, s_p20;  // LECO 1976 %-only fonts at HALF the 
 static Layer *s_pct_layer;
 // Appear wobble (user, v2.4.0 — the _watchface v1.2.0 motion
 // brought to the apps): when the app comes to the front, the
-// whole face wobbles sideways and settles. s_wobble is the
-// current horizontal offset in px; 0 at rest.
+// TEXT wobbles sideways and settles (v2.4.1: text only — the
+// battery body stays put). s_wobble is the current horizontal
+// offset in px; 0 at rest.
 static int s_wobble;
 #define WOBBLE_AMP 10
 static Layer *s_days_layer;
@@ -69,7 +70,7 @@ static void draw_battery_bg(GContext *ctx, GRect b) {
   bool big = b.size.w >= 180;
   int bw = big ? 172 : 126;
   int bh = big ? 100 : 78;
-  int x = (b.size.w - bw) / 2 + s_wobble;
+  int x = (b.size.w - bw) / 2;
   // Centered on screen, as before (the header-position trial was
   // reverted at the user's request: keep the center alignment).
   int y = (b.size.h - bh) / 2;
@@ -338,7 +339,7 @@ static void start_wobble(void) {
   s_wobble_running = true;
   Animation *a = animation_create();
   animation_set_delay(a, 400);
-  animation_set_duration(a, 550);
+  animation_set_duration(a, 200);  // user: the wobble lasts 200 ms
   animation_set_implementation(a, &s_wobble_impl);
   animation_set_handlers(
       a, (AnimationHandlers){.stopped = wobble_stopped}, NULL);
