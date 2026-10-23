@@ -8,64 +8,6 @@
 
 static Window *s_window;
 
-// ---------- Exit: fade to black ----------
-// On exit (Up or Back) the screen dips to black: a top veil
-// layer blackens pixels in a 4x4 Bayer pattern, density ramping
-// to full over ~5 ms, then the window pops unanimated while
-// fully black (a final timer lets the black frame land first).
-// The content itself is never touched.
-static Layer *s_veil_layer;
-static bool s_fading;
-static int s_density;  // 0..16
-
-static const uint8_t s_bayer[4][4] = {
-    {0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5}};
-
-static void veil_update_proc(Layer *layer, GContext *ctx) {
-  if (s_density <= 0) return;
-  GRect b = layer_get_bounds(layer);
-  graphics_context_set_stroke_color(ctx, GColorBlack);
-  for (int y = 0; y < b.size.h; y++) {
-    for (int x = 0; x < b.size.w; x++) {
-      if (s_bayer[y & 3][x & 3] < s_density) {
-        graphics_draw_pixel(ctx, GPoint(x, y));
-      }
-    }
-  }
-}
-
-static void fade_anim_update(Animation *animation,
-                             const AnimationProgress progress) {
-  int d = (int)((int64_t)progress * 16 / 65535);
-  if (d != s_density) {
-    s_density = d;
-    layer_mark_dirty(s_veil_layer);
-  }
-}
-
-// File scope: animation_set_implementation keeps the pointer.
-static const AnimationImplementation s_fade_impl = {
-    .update = fade_anim_update};
-
-static void pop_timer(void *context) { window_stack_pop(false); }
-
-static void fade_anim_stopped(Animation *animation, bool finished,
-                              void *context) {
-  s_density = 16;
-  layer_mark_dirty(s_veil_layer);
-  app_timer_register(40, pop_timer, NULL);
-}
-
-static void start_fade(void) {
-  if (s_fading) return;
-  s_fading = true;
-  Animation *a = animation_create();
-  animation_set_duration(a, 5);
-  animation_set_implementation(a, &s_fade_impl);
-  animation_set_handlers(
-      a, (AnimationHandlers){.stopped = fade_anim_stopped}, NULL);
-  animation_schedule(a);
-}
 
 static GFont s_f64, s_f46, s_f56, s_f40;  // LECO 1976 (custom font)
 static GFont s_f50, s_f48;
@@ -678,19 +620,13 @@ static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
 }
 
 static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
-  // Top button returns to the watchface (user request), dipping
-  // to black first.
-  start_fade();
-}
-
-static void back_click_handler(ClickRecognizerRef recognizer, void *context) {
-  start_fade();
+  // Top button returns to the watchface (user request).
+  window_stack_pop(true);
 }
 
 static void click_config_provider(void *context) {
   window_single_click_subscribe(BUTTON_ID_SELECT, select_click_handler);
   window_single_click_subscribe(BUTTON_ID_UP, up_click_handler);
-  window_single_click_subscribe(BUTTON_ID_BACK, back_click_handler);
 }
 
 // ---------- Window ----------
@@ -702,8 +638,6 @@ static void window_load(Window *window) {
   int h = b.size.h;
   window_set_background_color(window, bg_color());
 
-  s_veil_layer = layer_create(b);
-  layer_set_update_proc(s_veil_layer, veil_update_proc);
 
 
   // Temps layer FIRST (v2.1.0): the Lean pass in its
@@ -737,14 +671,12 @@ static void window_load(Window *window) {
   layer_add_child(root, s_header_layer);
 
   refresh_display();
-  layer_add_child(root, s_veil_layer);
 }
 
 static void window_unload(Window *window) {
   layer_destroy(s_temps_layer);
   layer_destroy(s_header_layer);
   layer_destroy(s_icon_layer);
-  layer_destroy(s_veil_layer);
 }
 
 static void init(void) {
