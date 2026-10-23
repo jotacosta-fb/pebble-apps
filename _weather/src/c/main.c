@@ -442,9 +442,10 @@ static void temps_update_proc(Layer *layer, GContext *ctx) {
   int max_x = x + min_sz.w + pad * 2 + sep_w;
 
   // The wobble is diagonal (user, v2.6.0): the max slides up
-  // and right, the min down and left — along the ladder — while
-  // both degree marks stay in place, the anchor (the marks
-  // below keep using the home positions).
+  // and right, the min down and left — along the ladder. The
+  // min's filled square stays in place (the anchor); the max's
+  // ring follows its number (user correction, v2.6.1 — the
+  // ring's position below gets the same offsets as the max).
   graphics_draw_text(ctx, max_buf, f_max,
                      GRect(max_x + s_wobble, max_box_y - s_wobble,
                            max_sz.w + 2, b.size.h),
@@ -469,8 +470,8 @@ static void temps_update_proc(Layer *layer, GContext *ctx) {
   // No separator at all (user: remove the divider).
   // Degree as a hand-drawn hollow square at the max's top.
   int deg_sz = big ? 11 : 9;
-  int deg_x = max_x + max_sz.w + (big ? 4 : 3);
-  int deg_y = max_box_y + fh * 30 / 100 + 1;
+  int deg_x = max_x + max_sz.w + (big ? 4 : 3) + s_wobble;
+  int deg_y = max_box_y + fh * 30 / 100 + 1 - s_wobble;
   graphics_context_set_fill_color(ctx, ink_color());
   graphics_fill_rect(ctx, GRect(deg_x, deg_y, deg_sz, deg_sz), 0,
                      GCornerNone);
@@ -681,7 +682,7 @@ static void start_wobble(void) {
   s_wobble_running = true;
   Animation *a = animation_create();
   animation_set_delay(a, 250);  // user: wobble delay 250 ms
-  animation_set_duration(a, 400);  // user: wobble length 400 ms
+  animation_set_duration(a, 700);  // user: wobble length (400 was too short)
   animation_set_implementation(a, &s_wobble_impl);
   animation_set_handlers(
       a, (AnimationHandlers){.stopped = wobble_stopped}, NULL);
