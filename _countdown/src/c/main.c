@@ -256,12 +256,15 @@ static void main_update_proc(Layer *layer, GContext *ctx) {
                        0, GCornerNone);
   } else if (underline_minutes) {
     // Thick underline under the minutes only (user, replacing the
-    // minutes box): spans the minutes' layout width, a few px
-    // below the glyph box (lowered 2px more in v1.5.0, user).
-    graphics_context_set_fill_color(ctx, GColorBlack);
+    // minutes box): a few px below the glyph box (lowered 2px
+    // more in v1.5.0, user). Bigger and dark grey (user, v1.5.2):
+    // wider than the minutes on both sides and thicker, in both
+    // size tiers, so the wobble reads.
+    int u_ext = big ? 6 : 4;
+    graphics_context_set_fill_color(ctx, GColorDarkGray);
     graphics_fill_rect(ctx,
-                       GRect(x + s_wobble, glyph_bottom + 5, min_sz.w,
-                             big ? 6 : 4),
+                       GRect(x + s_wobble - u_ext, glyph_bottom + 5,
+                             min_sz.w + 2 * u_ext, big ? 8 : 6),
                        0, GCornerNone);
   }
 
