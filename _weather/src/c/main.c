@@ -43,6 +43,12 @@ static int font_height_of(GFont f) {
   return 40;
 }
 static Layer *s_temps_layer;
+// Appear wobble (user, v2.5.0 — the _watchface v1.2.0 motion
+// brought to the apps): when the app comes to the front, the max
+// wobbles up and the min down, then back past centre and settles.
+// s_wobble is the current offset in px; 0 at rest.
+static int s_wobble;
+#define WOBBLE_AMP 12
 static Layer *s_header_layer;
 static Layer *s_icon_layer;
 
@@ -427,8 +433,8 @@ static void temps_update_proc(Layer *layer, GContext *ctx) {
   int shift = fh * 21 / 80;
   // Min stays exactly where it is; the max rides slightly
   // higher (user).
-  int max_box_y = cy - fh + shift - (big ? 15 : 13);
-  int min_box_y = cy - min_h * 30 / 100 - shift;
+  int max_box_y = cy - fh + shift - (big ? 15 : 13) - s_wobble;
+  int min_box_y = cy - min_h * 30 / 100 - shift + s_wobble;
   int x = (b.size.w - total) / 2;
   int min_x = x;
   int max_x = x + min_sz.w + pad * 2 + sep_w;
@@ -631,6 +637,51 @@ static void click_config_provider(void *context) {
 
 // ---------- Window ----------
 
+// ---------- Appear wobble ----------
+// One full sine swing with a linear decay: the offsets start at
+// 0 (the app is already on screen), separate the pair, cross
+// back smaller, and settle at 0. Delayed 400 ms so the system's
+// launch slide finishes first — the same recipe the user
+// approved on _watchface. The stopped handler zeroes the offset,
+// so the resting display is unchanged.
+
+static bool s_wobble_running;
+
+static void wobble_update(Animation *animation,
+                          const AnimationProgress progress) {
+  int32_t t = (int32_t)progress;            // 0..65535
+  int32_t angle = (int32_t)(((int64_t)t * TRIG_MAX_ANGLE) >> 16);
+  int32_t sn = cos_lookup(angle - TRIG_MAX_ANGLE / 4);  // sin, Q16
+  s_wobble = (int)((int64_t)WOBBLE_AMP * sn * (65536 - t) /
+                   ((int64_t)65536 * 65536));
+  if (s_temps_layer) layer_mark_dirty(s_temps_layer);
+}
+
+// File scope: animation_set_implementation keeps the pointer.
+static const AnimationImplementation s_wobble_impl = {
+    .update = wobble_update};
+
+static void wobble_stopped(Animation *animation, bool finished,
+                           void *context) {
+  s_wobble_running = false;
+  s_wobble = 0;
+  if (s_temps_layer) layer_mark_dirty(s_temps_layer);
+}
+
+static void start_wobble(void) {
+  if (s_wobble_running) return;
+  s_wobble_running = true;
+  Animation *a = animation_create();
+  animation_set_delay(a, 400);
+  animation_set_duration(a, 550);
+  animation_set_implementation(a, &s_wobble_impl);
+  animation_set_handlers(
+      a, (AnimationHandlers){.stopped = wobble_stopped}, NULL);
+  animation_schedule(a);
+}
+
+static void window_appear(Window *window) { start_wobble(); }
+
 static void window_load(Window *window) {
   Layer *root = window_get_root_layer(window);
   GRect b = layer_get_bounds(root);
@@ -723,6 +774,7 @@ static void init(void) {
   s_window = window_create();
   window_set_window_handlers(s_window, (WindowHandlers) {
     .load = window_load,
+    .appear = window_appear,
     .unload = window_unload,
   });
   window_set_click_config_provider(s_window, click_config_provider);
