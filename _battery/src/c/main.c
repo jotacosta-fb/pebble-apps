@@ -14,6 +14,12 @@ static Window *s_window;
 static GFont s_f68, s_f48, s_f56, s_f40;  // LECO 1976 (custom font)
 static GFont s_p34, s_p28, s_p24, s_p20;  // LECO 1976 %-only fonts at HALF the digit heights (user: full size was too large)
 static Layer *s_pct_layer;
+// Appear wobble (user, v2.4.0 — the _watchface v1.2.0 motion
+// brought to the apps): when the app comes to the front, the
+// whole face wobbles sideways and settles. s_wobble is the
+// current horizontal offset in px; 0 at rest.
+static int s_wobble;
+#define WOBBLE_AMP 10
 static Layer *s_days_layer;
 
 static int s_pct = -1;         // -1 = no reading yet
@@ -63,7 +69,7 @@ static void draw_battery_bg(GContext *ctx, GRect b) {
   bool big = b.size.w >= 180;
   int bw = big ? 172 : 126;
   int bh = big ? 100 : 78;
-  int x = (b.size.w - bw) / 2;
+  int x = (b.size.w - bw) / 2 + s_wobble;
   // Centered on screen, as before (the header-position trial was
   // reverted at the user's request: keep the center alignment).
   int y = (b.size.h - bh) / 2;
@@ -126,7 +132,9 @@ static void pct_update_proc(Layer *layer, GContext *ctx) {
 
   if (s_pct < 0) {
     GFont f = s_f48;
-    graphics_draw_text(ctx, "--", f, b, GTextOverflowModeFill,
+    graphics_draw_text(ctx, "--", f,
+                       GRect(s_wobble, 0, b.size.w, b.size.h),
+                       GTextOverflowModeFill,
                        GTextAlignmentCenter, NULL);
     return;
   }
@@ -156,7 +164,7 @@ GFont font = big ? s_f68 : s_f48;
   }
 
   int total = d_sz.w + 4 + p_sz.w;
-  int x = (b.size.w - total) / 2;
+  int x = (b.size.w - total) / 2 + s_wobble;
   graphics_draw_text(ctx, buf, font, GRect(x, box_y, d_sz.w + 2, box_h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
   // The %'s box is bottom-aligned with the digits' box so the
@@ -217,7 +225,8 @@ static void days_update_proc(Layer *layer, GContext *ctx) {
 
   if (s_charging || s_days_x10 < 0) {
     graphics_context_set_text_color(ctx, ink_color());
-    graphics_draw_text(ctx, s_charging ? "charging" : "-- days", font, b,
+    graphics_draw_text(ctx, s_charging ? "charging" : "-- days", font,
+                       GRect(s_wobble, 0, b.size.w, b.size.h),
                        GTextOverflowModeFill, GTextAlignmentCenter, NULL);
     return;
   }
@@ -247,7 +256,7 @@ static void days_update_proc(Layer *layer, GContext *ctx) {
         suffix, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
   }
 
-  int x = (b.size.w - (i_sz.w + f_sz.w + s_sz.w)) / 2;
+  int x = (b.size.w - (i_sz.w + f_sz.w + s_sz.w)) / 2 + s_wobble;
   graphics_context_set_text_color(ctx, ink_color());
   graphics_draw_text(ctx, int_buf, font, GRect(x, 0, i_sz.w + 2, b.size.h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
@@ -290,6 +299,53 @@ static void click_config_provider(void *context) {
 }
 
 // ---------- Window ----------
+
+// ---------- Appear wobble ----------
+// One full sine swing with a linear decay, sideways: the offset
+// starts at 0 (the app is already on screen), swings one way,
+// back past centre smaller, and settles at 0. Delayed 400 ms so
+// the system's launch slide finishes first — the recipe the
+// user approved on _watchface. The stopped handler zeroes the
+// offset, so the resting display is unchanged.
+
+static bool s_wobble_running;
+
+static void wobble_update(Animation *animation,
+                          const AnimationProgress progress) {
+  int32_t t = (int32_t)progress;            // 0..65535
+  int32_t angle = (int32_t)(((int64_t)t * TRIG_MAX_ANGLE) >> 16);
+  int32_t sn = cos_lookup(angle - TRIG_MAX_ANGLE / 4);  // sin, Q16
+  s_wobble = (int)((int64_t)WOBBLE_AMP * sn * (65536 - t) /
+                   ((int64_t)65536 * 65536));
+  if (s_pct_layer) layer_mark_dirty(s_pct_layer);
+  if (s_days_layer) layer_mark_dirty(s_days_layer);
+}
+
+// File scope: animation_set_implementation keeps the pointer.
+static const AnimationImplementation s_wobble_impl = {
+    .update = wobble_update};
+
+static void wobble_stopped(Animation *animation, bool finished,
+                           void *context) {
+  s_wobble_running = false;
+  s_wobble = 0;
+  if (s_pct_layer) layer_mark_dirty(s_pct_layer);
+  if (s_days_layer) layer_mark_dirty(s_days_layer);
+}
+
+static void start_wobble(void) {
+  if (s_wobble_running) return;
+  s_wobble_running = true;
+  Animation *a = animation_create();
+  animation_set_delay(a, 400);
+  animation_set_duration(a, 550);
+  animation_set_implementation(a, &s_wobble_impl);
+  animation_set_handlers(
+      a, (AnimationHandlers){.stopped = wobble_stopped}, NULL);
+  animation_schedule(a);
+}
+
+static void window_appear(Window *window) { start_wobble(); }
 
 static void window_load(Window *window) {
   Layer *root = window_get_root_layer(window);
@@ -374,6 +430,7 @@ static void init(void) {
   s_window = window_create();
   window_set_window_handlers(s_window, (WindowHandlers) {
     .load = window_load,
+    .appear = window_appear,
     .unload = window_unload,
   });
   window_set_click_config_provider(s_window, click_config_provider);
