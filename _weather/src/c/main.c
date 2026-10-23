@@ -672,8 +672,8 @@ static void start_wobble(void) {
   if (s_wobble_running) return;
   s_wobble_running = true;
   Animation *a = animation_create();
-  animation_set_delay(a, 400);
-  animation_set_duration(a, 200);  // user: the wobble lasts 200 ms
+  animation_set_delay(a, 250);  // user: wobble delay 250 ms
+  animation_set_duration(a, 400);  // user: wobble length 400 ms
   animation_set_implementation(a, &s_wobble_impl);
   animation_set_handlers(
       a, (AnimationHandlers){.stopped = wobble_stopped}, NULL);
