@@ -23,25 +23,25 @@
           "type": "font",
           "name": "FONT_LECO_68",
           "file": "fonts/leco1976-pebble.otf",
-          "characterRegex": "[0-9.]"
+          "characterRegex": "[0-9]"
         },
         {
           "type": "font",
           "name": "FONT_LECO_48",
           "file": "fonts/leco1976-pebble.otf",
-          "characterRegex": "[0-9.]"
+          "characterRegex": "[0-9]"
         },
         {
           "type": "font",
           "name": "FONT_LECO_56",
           "file": "fonts/leco1976-pebble.otf",
-          "characterRegex": "[0-9.]"
+          "characterRegex": "[0-9]"
         },
         {
           "type": "font",
           "name": "FONT_LECO_40",
           "file": "fonts/leco1976-pebble.otf",
-          "characterRegex": "[0-9.]"
+          "characterRegex": "[0-9]"
         },
         {
           "type": "font",
@@ -83,5 +83,5 @@
       "watchface": false
     }
   },
-  "version": "2.5.0"
+  "version": "2.5.1"
 }
