@@ -44,8 +44,10 @@ static int font_height_of(GFont f) {
 }
 static Layer *s_temps_layer;
 // Appear wobble (user, v2.5.0 — the _watchface v1.2.0 motion
-// brought to the apps): when the app comes to the front, the max
-// wobbles up and the min down, then back past centre and settles.
+// brought to the apps): when the app comes to the front, the
+// numbers wobble along the ladder's diagonal — max up-right,
+// min down-left, back past centre, settle — while the degree
+// marks stay in place (v2.6.0; it was purely vertical before).
 // s_wobble is the current offset in px; 0 at rest.
 static int s_wobble;
 #define WOBBLE_AMP 12
@@ -433,17 +435,23 @@ static void temps_update_proc(Layer *layer, GContext *ctx) {
   int shift = fh * 21 / 80;
   // Min stays exactly where it is; the max rides slightly
   // higher (user).
-  int max_box_y = cy - fh + shift - (big ? 15 : 13) - s_wobble;
-  int min_box_y = cy - min_h * 30 / 100 - shift + s_wobble;
+  int max_box_y = cy - fh + shift - (big ? 15 : 13);
+  int min_box_y = cy - min_h * 30 / 100 - shift;
   int x = (b.size.w - total) / 2;
   int min_x = x;
   int max_x = x + min_sz.w + pad * 2 + sep_w;
 
+  // The wobble is diagonal (user, v2.6.0): the max slides up
+  // and right, the min down and left — along the ladder — while
+  // both degree marks stay in place, the anchor (the marks
+  // below keep using the home positions).
   graphics_draw_text(ctx, max_buf, f_max,
-                     GRect(max_x, max_box_y, max_sz.w + 2, b.size.h),
+                     GRect(max_x + s_wobble, max_box_y - s_wobble,
+                           max_sz.w + 2, b.size.h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
   graphics_draw_text(ctx, min_buf, f_min,
-                     GRect(min_x, min_box_y, min_sz.w + 2, b.size.h),
+                     GRect(min_x - s_wobble, min_box_y + s_wobble,
+                           min_sz.w + 2, b.size.h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
 
   // The min's degree is a FILLED square (user) — same size and
