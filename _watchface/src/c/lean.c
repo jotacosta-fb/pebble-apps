@@ -1067,6 +1067,12 @@ static void start_fly(void) {
   if (s_fly_running) return;
   s_fly_running = true;
   Animation *a = animation_create();
+  // On app-return the face restarts under the system's exit
+  // transition (~300 ms): an immediate flight plays out hidden
+  // underneath it (v1.1.0/v1.1.1 — the user saw it only at face
+  // start). Delay the flight so it begins once the face is
+  // actually on screen.
+  animation_set_delay(a, 400);
   animation_set_duration(a, 550);
   animation_set_implementation(a, &s_fly_impl);
   animation_set_handlers(
@@ -1084,6 +1090,8 @@ static void window_appear(Window *window) { start_fly(); }
 static void focus_handler(bool in_focus) {
   if (in_focus) start_fly();
 }
+
+static void fly_kick(void *context) { start_fly(); }
 
 // --------------------------------------------------------------- Fenster
 
@@ -1122,6 +1130,7 @@ static void init(void) {
   window_stack_push(s_window, false);
   app_focus_service_subscribe_handlers((AppFocusHandlers){
       .did_focus = focus_handler});
+  app_timer_register(500, fly_kick, NULL);
 
   tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
 

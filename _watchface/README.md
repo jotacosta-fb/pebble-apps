@@ -1,6 +1,6 @@
 # _watchface (fork)
 
-A fork of Lean 1.1.1 (MIT, by Axel Kark / Kieselleger) for the
+A fork of Lean 1.1.2 (MIT, by Axel Kark / Kieselleger) for the
 _app family, renamed **_watchface**. Two changes vs. upstream:
 
 1. **Day/night awareness, the low-battery way.** The phone sends
@@ -28,7 +28,7 @@ The original README follows.
 
 <img src="screenshots/shot_emery_mono.png" alt="shot_emery_mono.png"> <img src="screenshots/shot_emery_amber.png" alt="shot_emery_amber.png"> <img src="screenshots/shot_emery_mint.png" alt="shot_emery_mint.png"> <img src="screenshots/shot_gabbro_mono.png" alt="shot_gabbro_mono.png"> <img src="screenshots/shot_gabbro_teal.png" alt="shot_gabbro_teal.png"> <img src="screenshots/shot_gabbro_orange.png" alt="shot_gabbro_orange.png">
 
-A Pebble watchface (v1.1.1).
+A Pebble watchface (v1.1.2).
 
 Every watch assumes you can turn your arm until the face lies straight in
 front of you. Not everyone can. Lean turns the time instead of your arm:
@@ -101,7 +101,7 @@ The repository can also be imported into CloudPebble as is.
 
 ## Release notes
 
-### 1.1.1
+### 1.1.2
 
 Optional date: weekday and day, turned with the time and placed in the
 largest free space around it. The weekday follows the watch language, or the
