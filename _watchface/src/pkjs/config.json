@@ -138,6 +138,16 @@
         "min": 0,
         "max": 1500,
         "step": 50
+      },
+      {
+        "type": "slider",
+        "messageKey": "WOBBLELEN",
+        "label": "Wobble length",
+        "description": "How long the wobble itself lasts, in milliseconds.",
+        "defaultValue": 200,
+        "min": 100,
+        "max": 1500,
+        "step": 50
       }
     ]
   },

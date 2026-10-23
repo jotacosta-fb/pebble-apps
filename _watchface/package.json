@@ -29,7 +29,8 @@
       "NIGHTMODE",
       "LAT",
       "LON",
-      "ANIMDELAY"
+      "ANIMDELAY",
+      "WOBBLELEN"
     ],
     "projectType": "native",
     "resources": {
@@ -64,5 +65,5 @@
       "watchface": true
     }
   },
-  "version": "1.3.0"
+  "version": "1.4.0"
 }

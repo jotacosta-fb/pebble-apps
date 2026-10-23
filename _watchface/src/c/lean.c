@@ -122,6 +122,7 @@ static const char *const WDAY_NAMES[LANG_COUNT][7] = {
 #define PKEY_LAT        110
 #define PKEY_LON        111
 #define PKEY_ANIMDELAY  112
+#define PKEY_WOBBLELEN  113
 
 // s_color_bg/fg are the colours actually drawn with. By day they
 // mirror the user's picks (s_user_bg/fg); at night they are the
@@ -142,6 +143,7 @@ static GColor s_user_fg;
 static const int FONTSIZE_LEGACY_PCT[3] = { 80, 100, 125 };
 static int  s_fontpercent = 100;
 static int  s_anim_delay = 400;   // ms before the appear wobble
+static int  s_wobble_len = 200;   // ms the wobble lasts (user default)
 static bool s_nightmode  = true;
 static bool s_night_active = false;
 
@@ -900,6 +902,7 @@ static bool valid_tilt(int v)  { return v >= 0 && v <= TILT_MAX; }
 static bool valid_lang(int v)  { return v >= LANG_AUTO && v <= LANG_COUNT; }
 
 static bool valid_animdelay(int v) { return v >= 0 && v <= 5000; }
+static bool valid_wobblelen(int v) { return v >= 50 && v <= 5000; }
 
 static bool valid_fontsize(int v) {
   return v >= FONTSIZE_MIN_PCT && v <= FONTSIZE_MAX_PCT;
@@ -929,6 +932,10 @@ static void load_settings(void) {
   if (persist_exists(PKEY_ANIMDELAY)) {
     int v = persist_read_int(PKEY_ANIMDELAY);
     if (valid_animdelay(v)) s_anim_delay = v;
+  }
+  if (persist_exists(PKEY_WOBBLELEN)) {
+    int v = persist_read_int(PKEY_WOBBLELEN);
+    if (valid_wobblelen(v)) s_wobble_len = v;
   }
   if (persist_exists(PKEY_LAT) && persist_exists(PKEY_LON)) {
     s_lat_e6 = persist_read_int(PKEY_LAT);
@@ -987,6 +994,13 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
     if (valid_animdelay(v)) {
       s_anim_delay = v;
       persist_write_int(PKEY_ANIMDELAY, v);
+    }
+  }
+  if ((t = dict_find(iter, MESSAGE_KEY_WOBBLELEN)) != NULL) {
+    int v = tuple_int(t);
+    if (valid_wobblelen(v)) {
+      s_wobble_len = v;
+      persist_write_int(PKEY_WOBBLELEN, v);
     }
   }
   if ((t = dict_find(iter, MESSAGE_KEY_LAT)) != NULL) {
@@ -1091,7 +1105,7 @@ static void start_fly(void) {
   // start). Delay the flight so it begins once the face is
   // actually on screen.
   animation_set_delay(a, s_anim_delay);
-  animation_set_duration(a, 550);
+  animation_set_duration(a, s_wobble_len);
   animation_set_implementation(a, &s_fly_impl);
   animation_set_handlers(
       a, (AnimationHandlers){.stopped = fly_anim_stopped}, NULL);
