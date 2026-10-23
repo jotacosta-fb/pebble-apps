@@ -176,7 +176,7 @@ static uint8_t s_mask[(FB_MAX_W * FB_MAX_H + 7) / 8];
 // (above the block centre) flies in from the left, the minute row
 // from the right. Both are 0 at rest, rendering is then original.
 static int s_fly_off_l, s_fly_off_r;
-#define FLY_DIST 120  // source pixels of travel
+#define WOBBLE_AMP 14  // source pixels of sideways wobble
 static uint8_t s_date_mask[(FB_MAX_W * FB_MAX_H + 7) / 8];
 
 // Umriss der Tinte, Grenzen inklusive. Leer, solange x1 < x0.
@@ -1031,8 +1031,8 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
 
 // --------------------------------------------------------------- Einflug
 // Appear animation (user): when the face comes to the front, the
-// two number rows fly in from the sides and settle — easeOutBack
-// (fast approach, a few px of overshoot, settle), 550 ms. The
+// two number rows wobble sideways in opposite directions and
+// settle back home (v1.2.0 re-spec — see fly_anim_update). The
 // offsets only exist while this runs; the stopped handler zeroes
 // them, so the resting face renders exactly as before.
 
@@ -1041,13 +1041,16 @@ static bool s_fly_running;
 static void fly_anim_update(Animation *animation,
                             const AnimationProgress progress) {
   int32_t t = (int32_t)progress;            // 0..65535
-  int32_t u = t - 65536;                    // t-1, Q16
-  int32_t u2 = (int32_t)(((int64_t)u * u) >> 16);
-  int32_t u3 = (int32_t)(((int64_t)u2 * u) >> 16);
-  int32_t e = 65536 + 2 * u3 + u2;          // easeOutBack c1=1, c3=2
-  int mag = (int)((int64_t)FLY_DIST * (65536 - e) / 65536);
-  s_fly_off_l = mag;
-  s_fly_off_r = -mag;
+  // User re-spec (v1.2.0): on app-return the face is ALREADY on
+  // screen, so a fly-in from off-screen starts with a jump. The
+  // rows instead start at home, wobble to opposite sides and
+  // settle back: one full sine swing with a linear decay.
+  int32_t angle = (int32_t)(((int64_t)t * TRIG_MAX_ANGLE) >> 16);
+  int32_t sn = cos_lookup(angle - TRIG_MAX_ANGLE / 4);  // sin, Q16
+  int w = (int)((int64_t)WOBBLE_AMP * sn * (65536 - t) /
+                ((int64_t)65536 * 65536));
+  s_fly_off_l = w;
+  s_fly_off_r = -w;
   layer_mark_dirty(s_canvas);
 }
 
