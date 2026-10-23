@@ -16,9 +16,12 @@ static GFont s_p34, s_p28, s_p24, s_p20;  // LECO 1976 %-only fonts at HALF the 
 static Layer *s_pct_layer;
 // Appear wobble (user, v2.4.0 — the _watchface v1.2.0 motion
 // brought to the apps): when the app comes to the front, the
-// TEXT wobbles sideways and settles (v2.4.1: text only — the
-// battery body stays put). s_wobble is the current horizontal
-// offset in px; 0 at rest.
+// readout splits around its decimal dot — left side slides
+// left, right side slides right, dot stays (v2.6.0; before
+// that the text wobbled sideways as one piece, and the battery
+// body never moves). While charging there is no dot, so the
+// % readout keeps the plain sideways wobble. s_wobble is the
+// current offset in px; 0 at rest.
 static int s_wobble;
 #define WOBBLE_AMP 10
 static Layer *s_days_layer;
@@ -168,24 +171,29 @@ static void draw_days_big(GContext *ctx, GRect b) {
     if (dot < 8) dot = 8;
   }
   int total = i_sz.w + dot_gap + dot + dot_gap + f_sz.w + 6 + w_sz.w;
-  int x = (b.size.w - total) / 2 + s_wobble;
+  // The wobble splits the readout around the dot (user, v2.6.0):
+  // the left side slides left, the right side slides right, the
+  // dot itself stays exactly in place.
+  int base = (b.size.w - total) / 2;
+  int int_x = base - s_wobble;
+  int dot_x = base + i_sz.w + dot_gap;
+  int frac_x = dot_x + dot + dot_gap + s_wobble;
   graphics_draw_text(ctx, int_buf, font,
-                     GRect(x, box_y, i_sz.w + 2, box_h),
+                     GRect(int_x, box_y, i_sz.w + 2, box_h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
-  x += i_sz.w + dot_gap;
   graphics_context_set_fill_color(ctx, ink_color());
   graphics_fill_rect(ctx,
-                     GRect(x, box_y + i_sz.h - dot, dot, dot), 0,
+                     GRect(dot_x, box_y + i_sz.h - dot, dot, dot), 0,
                      GCornerNone);
-  x += dot + dot_gap;
   graphics_draw_text(ctx, frac_buf, font,
-                     GRect(x, box_y, f_sz.w + 2, box_h),
+                     GRect(frac_x, box_y, f_sz.w + 2, box_h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
   // "days" bottom-aligned with the digits, where the % used to sit.
   int word_y = box_y + i_sz.h - w_sz.h;
   if (word_y < box_y) word_y = box_y;
   graphics_draw_text(ctx, "days", word_font,
-                     GRect(x + f_sz.w + 6, word_y, w_sz.w + 2, box_h),
+                     GRect(frac_x + f_sz.w + 6, word_y, w_sz.w + 2,
+                           box_h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
 }
 
@@ -298,8 +306,7 @@ static void days_update_proc(Layer *layer, GContext *ctx) {
 
   if (s_charging) {
     graphics_context_set_text_color(ctx, ink_color());
-    graphics_draw_text(ctx, "charging", font,
-                       GRect(s_wobble, 0, b.size.w, b.size.h),
+    graphics_draw_text(ctx, "charging", font, b,
                        GTextOverflowModeFill, GTextAlignmentCenter, NULL);
     return;
   }
@@ -308,8 +315,7 @@ static void days_update_proc(Layer *layer, GContext *ctx) {
     char pct_buf[8];
     snprintf(pct_buf, sizeof(pct_buf), "%d%%", s_pct);
     graphics_context_set_text_color(ctx, ink_color());
-    graphics_draw_text(ctx, pct_buf, font,
-                       GRect(s_wobble, 0, b.size.w, b.size.h),
+    graphics_draw_text(ctx, pct_buf, font, b,
                        GTextOverflowModeFill, GTextAlignmentCenter, NULL);
   }
 
@@ -362,7 +368,6 @@ static void wobble_update(Animation *animation,
   s_wobble = (int)((int64_t)WOBBLE_AMP * sn * (65536 - t) /
                    ((int64_t)65536 * 65536));
   if (s_pct_layer) layer_mark_dirty(s_pct_layer);
-  if (s_days_layer) layer_mark_dirty(s_days_layer);
 }
 
 // File scope: animation_set_implementation keeps the pointer.
@@ -374,7 +379,6 @@ static void wobble_stopped(Animation *animation, bool finished,
   s_wobble_running = false;
   s_wobble = 0;
   if (s_pct_layer) layer_mark_dirty(s_pct_layer);
-  if (s_days_layer) layer_mark_dirty(s_days_layer);
 }
 
 static void start_wobble(void) {
