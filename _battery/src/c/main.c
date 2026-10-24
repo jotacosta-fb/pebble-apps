@@ -333,7 +333,26 @@ static void battery_handler(BatteryChargeState state) {
   refresh_display();
 }
 
+// ---------- Idle timeout (user, v2.7.0) ----------
+// After a minute with no interaction the app pops itself back
+// to the watchface — the same pop the Up button does. Select and
+// coming to the front re-arm it; battery events do not (the
+// charger changing state is not the user doing anything).
+#define EXIT_TIMEOUT_MS 60000
+static AppTimer *s_exit_timer;
+
+static void exit_timer_cb(void *context) {
+  s_exit_timer = NULL;
+  window_stack_pop(true);
+}
+
+static void arm_exit_timer(void) {
+  if (s_exit_timer) app_timer_cancel(s_exit_timer);
+  s_exit_timer = app_timer_register(EXIT_TIMEOUT_MS, exit_timer_cb, NULL);
+}
+
 static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
+  arm_exit_timer();
   sample_battery();
   refresh_display();
 }
@@ -393,7 +412,10 @@ static void start_wobble(void) {
   animation_schedule(a);
 }
 
-static void window_appear(Window *window) { start_wobble(); }
+static void window_appear(Window *window) {
+  start_wobble();
+  arm_exit_timer();
+}
 
 static void window_load(Window *window) {
   Layer *root = window_get_root_layer(window);
