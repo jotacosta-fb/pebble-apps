@@ -631,11 +631,11 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
 }
 
 // ---------- Idle timeout (user, v2.7.0) ----------
-// After a minute with no interaction the app pops itself back
+// After 30 seconds with no interaction the app pops itself back
 // to the watchface — the same pop the Up button does. Select and
 // coming to the front re-arm it; incoming data does not (a fetch
 // completing is not the user doing anything).
-#define EXIT_TIMEOUT_MS 60000
+#define EXIT_TIMEOUT_MS 30000
 static AppTimer *s_exit_timer;
 
 static void exit_timer_cb(void *context) {
