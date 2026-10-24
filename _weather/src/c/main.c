@@ -1,6 +1,12 @@
 #include <pebble.h>
 #include <math.h>
 
+// Family overrides (shared/family.h): the wobble runs longer
+// and wider here than the family norm (user-tuned).
+#define FAMILY_WOBBLE_LENGTH_MS 600
+#define FAMILY_WOBBLE_AMP 12
+#include "../../shared/family.h"
+
 // MinMax Weather — a deliberately tiny weather app.
 // Shows exactly: today's min-max temperature, chance of precipitation,
 // and a condition icon. Data comes from the PebbleKit JS companion
@@ -43,14 +49,6 @@ static int font_height_of(GFont f) {
   return 40;
 }
 static Layer *s_temps_layer;
-// Appear wobble (user, v2.5.0 — the _watchface v1.2.0 motion
-// brought to the apps): when the app comes to the front, the
-// numbers wobble along the ladder's diagonal — max up-right,
-// min down-left, back past centre, settle — while the degree
-// marks stay in place (v2.6.0; it was purely vertical before).
-// s_wobble is the current offset in px; 0 at rest.
-static int s_wobble;
-#define WOBBLE_AMP 12
 static Layer *s_header_layer;
 static Layer *s_icon_layer;
 
@@ -69,30 +67,14 @@ static bool s_have_data = false;
 #define PERSIST_SUNRISE 7
 #define PERSIST_SUNSET 8
 
-// Night mode (user): after sunset the face inverts — black
-// background, white ink. The JS sends NIGHT with each fetch,
-// computed from Open-Meteo's sunrise/sunset for today.
-static bool s_night = false;
-static int s_sunrise = 0, s_sunset = 0;  // epochs from the phone
+// Night mode is the family engine (shared/family.h): the JS
+// sends sunrise/sunset epochs with each fetch; the watch stores
+// them and re-evaluates day/night on the minute tick.
 static void refresh_display(void);
 
-// Recompute day/night from the stored sunrise/sunset and the
-// current time: the apps now react to time passing (a minute
-// tick) instead of only flipping when a phone message arrives.
-static void eval_night(void) {
-  if (s_sunrise > 0 && s_sunset > s_sunrise) {
-    time_t now = time(NULL);
-    s_night = (now < s_sunrise || now >= s_sunset);
-  }
-}
-
 static void tick_handler(struct tm *tick_time, TimeUnits units) {
-  bool was = s_night;
-  eval_night();
-  if (s_night != was) refresh_display();
+  if (family_night_tick()) refresh_display();
 }
-static GColor ink_color(void) { return s_night ? GColorWhite : GColorBlack; }
-static GColor bg_color(void) { return s_night ? GColorBlack : GColorWhite; }
 
 // ---------- Icon drawing ----------
 
@@ -109,7 +91,7 @@ static void draw_cloud(GContext *ctx, GPoint c) {
   int ra = SC(16), rb = SC(22), rd = SC(13);
   int sw = s_k >= 85 ? 3 : 2;
 
-  graphics_context_set_stroke_color(ctx, ink_color());
+  graphics_context_set_stroke_color(ctx, family_ink_color());
   graphics_context_set_stroke_width(ctx, sw);
   graphics_draw_circle(ctx, a, ra);
   graphics_draw_circle(ctx, b, rb);
@@ -126,11 +108,11 @@ static void draw_cloud(GContext *ctx, GPoint c) {
   graphics_fill_rect(ctx, GRect(c.x - SC(34), c.y - SC(1), SC(68), SC(22)), 0, GCornerNone);
   // ...while the strips outside the sides stay background-white so
   // the outermost bump arcs (left -35, right +37) don't bulge out.
-  graphics_context_set_fill_color(ctx, bg_color());
+  graphics_context_set_fill_color(ctx, family_bg_color());
   graphics_fill_rect(ctx, GRect(c.x - SC(41), c.y - SC(1), SC(9), SC(22)), 0, GCornerNone);
   graphics_fill_rect(ctx, GRect(c.x + SC(32), c.y - SC(1), SC(9), SC(22)), 0, GCornerNone);
 
-  graphics_context_set_stroke_color(ctx, ink_color());
+  graphics_context_set_stroke_color(ctx, family_ink_color());
   graphics_context_set_stroke_width(ctx, sw);
   graphics_draw_line(ctx, GPoint(c.x - SC(34), c.y + SC(21)), GPoint(c.x + SC(34), c.y + SC(21)));
   // Sides run all the way up to the band's top edge, where the bump
@@ -143,7 +125,7 @@ static void draw_cloud(GContext *ctx, GPoint c) {
 static void draw_sun(GContext *ctx, GPoint c, int r) {
   graphics_context_set_fill_color(ctx, PBL_IF_COLOR_ELSE(GColorChromeYellow, GColorWhite));
   graphics_fill_circle(ctx, c, r);
-  graphics_context_set_stroke_color(ctx, ink_color());
+  graphics_context_set_stroke_color(ctx, family_ink_color());
   graphics_context_set_stroke_width(ctx, 3);
   graphics_draw_circle(ctx, c, r);
   for (int i = 0; i < 8; i++) {
@@ -183,7 +165,7 @@ static void icon_update_proc(Layer *layer, GContext *ctx) {
     draw_cloud(ctx, c);
   } else if (s_code == 45 || s_code == 48) {
     draw_cloud(ctx, GPoint(c.x, c.y - SC(10)));
-    graphics_context_set_stroke_color(ctx, ink_color());
+    graphics_context_set_stroke_color(ctx, family_ink_color());
     graphics_context_set_stroke_width(ctx, 3);
     for (int i = 0; i < 3; i++) {
       int y = c.y + SC(18) + i * SC(7);
@@ -191,7 +173,7 @@ static void icon_update_proc(Layer *layer, GContext *ctx) {
     }
   } else if ((s_code >= 71 && s_code <= 77) || s_code == 85 || s_code == 86) {
     draw_cloud(ctx, GPoint(c.x, c.y - SC(10)));
-    graphics_context_set_stroke_color(ctx, PBL_IF_COLOR_ELSE(GColorBlueMoon, ink_color()));
+    graphics_context_set_stroke_color(ctx, PBL_IF_COLOR_ELSE(GColorBlueMoon, family_ink_color()));
     graphics_context_set_stroke_width(ctx, 2);
     for (int i = -1; i <= 1; i++) {
       GPoint p = GPoint(c.x + i * SC(20), c.y + SC(20));
@@ -202,7 +184,7 @@ static void icon_update_proc(Layer *layer, GContext *ctx) {
     }
   } else if (s_code >= 95) {
     draw_cloud(ctx, GPoint(c.x, c.y - SC(10)));
-    graphics_context_set_stroke_color(ctx, PBL_IF_COLOR_ELSE(GColorChromeYellow, ink_color()));
+    graphics_context_set_stroke_color(ctx, PBL_IF_COLOR_ELSE(GColorChromeYellow, family_ink_color()));
     graphics_context_set_stroke_width(ctx, 4);
     graphics_draw_line(ctx, GPoint(c.x + SC(3), c.y + SC(13)), GPoint(c.x - SC(6), c.y + SC(27)));
     graphics_draw_line(ctx, GPoint(c.x - SC(6), c.y + SC(27)), GPoint(c.x + SC(3), c.y + SC(27)));
@@ -210,7 +192,7 @@ static void icon_update_proc(Layer *layer, GContext *ctx) {
   } else {
     // Rain / drizzle / showers
     draw_cloud(ctx, GPoint(c.x, c.y - SC(10)));
-    graphics_context_set_stroke_color(ctx, PBL_IF_COLOR_ELSE(GColorBlueMoon, ink_color()));
+    graphics_context_set_stroke_color(ctx, PBL_IF_COLOR_ELSE(GColorBlueMoon, family_ink_color()));
     graphics_context_set_stroke_width(ctx, 3);
     for (int i = -1; i <= 1; i++) {
       int x = c.x + i * SC(20);
@@ -281,23 +263,6 @@ static void pick_temps_font(bool big, const char *min_buf,
 #define LEAN_TEMPS_DEG 5.0
 static uint8_t s_lean_mask[(264 * 264 + 7) / 8];
 
-static uint8_t lean_blend(uint8_t fg, uint8_t bg, int cov) {
-  uint8_t out = 0xC0;
-  for (int shift = 0; shift <= 4; shift += 2) {
-    int f = (fg >> shift) & 3;
-    int b = (bg >> shift) & 3;
-    int v = (f * cov + b * (4 - cov) + 2) / 4;
-    out |= (uint8_t)(v << shift);
-  }
-  return out;
-}
-
-static int lean_isqrt(int v) {
-  int r = 0;
-  while ((r + 1) * (r + 1) <= v) r++;
-  return r;
-}
-
 // v2.1.2: rewritten in integer fixed point — no floating point
 // anywhere (v2.1.0's double-precision pass ran in the emulator
 // but crashed on hardware; the bisect build proved the fault
@@ -315,7 +280,7 @@ static void lean_pass(Layer *layer, GContext *ctx) {
     graphics_release_frame_buffer(ctx, fb);
     return;
   }
-  uint8_t bg = bg_color().argb;
+  uint8_t bg = family_bg_color().argb;
   int x0 = fr.origin.x, y0 = fr.origin.y;
   int x1 = x0 + fr.size.w - 1, y1 = y0 + fr.size.h - 1;
   memset(s_lean_mask, 0, (W * H + 7) / 8);
@@ -343,7 +308,7 @@ static void lean_pass(Layer *layer, GContext *ctx) {
   int cx16 = (ix0 + ix1) << 15;  // center * 65536
   int cy16 = (iy0 + iy1) << 15;
   int iw = ix1 - ix0 + 1, ih = iy1 - iy0 + 1;
-  int rad = lean_isqrt(iw * iw + ih * ih) / 2 + 2;
+  int rad = family_isqrt(iw * iw + ih * ih) / 2 + 2;
   // Anticlockwise: source = C + R(+5 deg) * (dest - C), with
   // cs/sn as 16.16 fixed point from the SDK trig lookups.
   int32_t ang = (int32_t)(TRIG_MAX_ANGLE * LEAN_TEMPS_DEG / 360.0);
@@ -351,7 +316,7 @@ static void lean_pass(Layer *layer, GContext *ctx) {
   int32_t sn = sin_lookup(ang);
   uint8_t lut[5];
   for (int cov = 0; cov <= 4; cov++) {
-    lut[cov] = lean_blend(ink_color().argb, bg, cov);
+    lut[cov] = family_blend(family_ink_color().argb, bg, cov);
   }
   int dy0 = (cy16 >> 16) - rad;
   if (dy0 < y0) dy0 = y0;
@@ -393,11 +358,11 @@ static void temps_update_proc(Layer *layer, GContext *ctx) {
   // previous frame's rotated ink joins the mask and the tilt
   // compounds. The layer was transparent over this same color,
   // and the icon draws after, so nothing visual changes.
-  graphics_context_set_fill_color(ctx, bg_color());
+  graphics_context_set_fill_color(ctx, family_bg_color());
   graphics_fill_rect(ctx, b, 0, GCornerNone);
   // LECO 1976 custom font (from the Lean watchface).
-  graphics_context_set_text_color(ctx, ink_color());
-  graphics_context_set_fill_color(ctx, ink_color());
+  graphics_context_set_text_color(ctx, family_ink_color());
+  graphics_context_set_fill_color(ctx, family_ink_color());
 
   if (!s_have_data) {
     graphics_draw_text(ctx, "-----\xC2\xB0", big ? s_f64 : s_f46, b,
@@ -447,11 +412,11 @@ static void temps_update_proc(Layer *layer, GContext *ctx) {
   // ring follows its number (user correction, v2.6.1 — the
   // ring's position below gets the same offsets as the max).
   graphics_draw_text(ctx, max_buf, f_max,
-                     GRect(max_x + s_wobble, max_box_y - s_wobble,
+                     GRect(max_x + family_wobble_offset, max_box_y - family_wobble_offset,
                            max_sz.w + 2, b.size.h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
   graphics_draw_text(ctx, min_buf, f_min,
-                     GRect(min_x - s_wobble, min_box_y + s_wobble,
+                     GRect(min_x - family_wobble_offset, min_box_y + family_wobble_offset,
                            min_sz.w + 2, b.size.h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
 
@@ -462,7 +427,7 @@ static void temps_update_proc(Layer *layer, GContext *ctx) {
     int mdeg_sz = big ? 11 : 9;
     int mdeg_x = min_x + min_sz.w + (big ? 4 : 3);
     int mdeg_y = min_box_y + min_h * 30 / 100 + 1;
-    graphics_context_set_fill_color(ctx, ink_color());
+    graphics_context_set_fill_color(ctx, family_ink_color());
     graphics_fill_rect(ctx, GRect(mdeg_x, mdeg_y, mdeg_sz, mdeg_sz), 0,
                        GCornerNone);
   }
@@ -470,18 +435,18 @@ static void temps_update_proc(Layer *layer, GContext *ctx) {
   // No separator at all (user: remove the divider).
   // Degree as a hand-drawn hollow square at the max's top.
   int deg_sz = big ? 11 : 9;
-  int deg_x = max_x + max_sz.w + (big ? 4 : 3) + s_wobble;
-  int deg_y = max_box_y + fh * 30 / 100 + 1 - s_wobble;
-  graphics_context_set_fill_color(ctx, ink_color());
+  int deg_x = max_x + max_sz.w + (big ? 4 : 3) + family_wobble_offset;
+  int deg_y = max_box_y + fh * 30 / 100 + 1 - family_wobble_offset;
+  graphics_context_set_fill_color(ctx, family_ink_color());
   graphics_fill_rect(ctx, GRect(deg_x, deg_y, deg_sz, deg_sz), 0,
                      GCornerNone);
-  graphics_context_set_fill_color(ctx, bg_color());
+  graphics_context_set_fill_color(ctx, family_bg_color());
   graphics_fill_rect(ctx,
                      GRect(deg_x + deg_sz / 3, deg_y + deg_sz / 3,
                            deg_sz - 2 * (deg_sz / 3),
                            deg_sz - 2 * (deg_sz / 3)),
                      0, GCornerNone);
-  graphics_context_set_fill_color(ctx, ink_color());
+  graphics_context_set_fill_color(ctx, family_ink_color());
   lean_pass(layer, ctx);
 }
 
@@ -499,14 +464,14 @@ static void draw_droplet(GContext *ctx, int cx, int cy) {
   if (!path) path = gpath_create(&drop_info);
   gpath_move_to(path, GPoint(cx, cy));
   graphics_context_set_fill_color(
-      ctx, PBL_IF_COLOR_ELSE(GColorBlueMoon, ink_color()));
+      ctx, PBL_IF_COLOR_ELSE(GColorBlueMoon, family_ink_color()));
   gpath_draw_filled(ctx, path);
   graphics_fill_circle(ctx, GPoint(cx, cy + 2), 5);
 }
 
 static void draw_snowflake(GContext *ctx, int cx, int cy) {
   graphics_context_set_stroke_color(
-      ctx, PBL_IF_COLOR_ELSE(GColorBlueMoon, ink_color()));
+      ctx, PBL_IF_COLOR_ELSE(GColorBlueMoon, family_ink_color()));
   graphics_context_set_stroke_width(ctx, 2);
   // Three spokes at 0/60/120 degrees — a small asterisk flake.
   graphics_draw_line(ctx, GPoint(cx - 7, cy), GPoint(cx + 7, cy));
@@ -535,14 +500,14 @@ static void header_update_proc(Layer *layer, GContext *ctx) {
   } else {
     draw_droplet(ctx, x + icon_w / 2, cy);
   }
-  graphics_context_set_text_color(ctx, ink_color());
+  graphics_context_set_text_color(ctx, family_ink_color());
   graphics_draw_text(ctx, buf, font,
                      GRect(x + icon_w + gap, 0, t_sz.w + 2, b.size.h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
 }
 
 static void refresh_display(void) {
-  if (s_window) window_set_background_color(s_window, bg_color());
+  if (s_window) window_set_background_color(s_window, family_bg_color());
   // Re-frame the temps layer for the font size the picker will
   // choose, so the digits' visual center stays on the screen's
   // vertical center at every size tier (LECO ink centers at ~64%
@@ -599,21 +564,9 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
   Tuple *t_min = dict_find(iter, MESSAGE_KEY_TEMP_MIN);
   Tuple *t_precip = dict_find(iter, MESSAGE_KEY_PRECIP);
   Tuple *t_code = dict_find(iter, MESSAGE_KEY_CODE);
-  Tuple *t_rise = dict_find(iter, MESSAGE_KEY_SUNRISE);
-  Tuple *t_set = dict_find(iter, MESSAGE_KEY_SUNSET);
-  if (t_rise && t_set) {
-    s_sunrise = (int)t_rise->value->int32;
-    s_sunset = (int)t_set->value->int32;
-    persist_write_int(PERSIST_SUNRISE, s_sunrise);
-    persist_write_int(PERSIST_SUNSET, s_sunset);
-    eval_night();
-  }
-  Tuple *t_night = dict_find(iter, MESSAGE_KEY_NIGHT);
-
-  if (t_night) {
-    s_night = t_night->value->int32 != 0;
-    persist_write_int(PERSIST_NIGHT, s_night ? 1 : 0);
-  }
+  family_night_apply(iter, MESSAGE_KEY_SUNRISE, MESSAGE_KEY_SUNSET,
+                       MESSAGE_KEY_NIGHT, PERSIST_SUNRISE, PERSIST_SUNSET,
+                       PERSIST_NIGHT);
 
   if (t_max && t_min && t_precip && t_code) {
     s_temp_max = t_max->value->int32;
@@ -630,26 +583,8 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
   }
 }
 
-// ---------- Idle timeout (user, v2.7.0) ----------
-// After 30 seconds with no interaction the app pops itself back
-// to the watchface — the same pop the Up button does. Select and
-// coming to the front re-arm it; incoming data does not (a fetch
-// completing is not the user doing anything).
-#define EXIT_TIMEOUT_MS 30000
-static AppTimer *s_exit_timer;
-
-static void exit_timer_cb(void *context) {
-  s_exit_timer = NULL;
-  window_stack_pop(true);
-}
-
-static void arm_exit_timer(void) {
-  if (s_exit_timer) app_timer_cancel(s_exit_timer);
-  s_exit_timer = app_timer_register(EXIT_TIMEOUT_MS, exit_timer_cb, NULL);
-}
-
 static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
-  arm_exit_timer();
+  family_idle_arm();
   request_update();
 }
 
@@ -665,52 +600,16 @@ static void click_config_provider(void *context) {
 
 // ---------- Window ----------
 
-// ---------- Appear wobble ----------
-// One full sine swing with a linear decay: the offsets start at
-// 0 (the app is already on screen), separate the pair, cross
-// back smaller, and settle at 0. Delayed 400 ms so the system's
-// launch slide finishes first — the same recipe the user
-// approved on _watchface. The stopped handler zeroes the offset,
-// so the resting display is unchanged.
-
-static bool s_wobble_running;
-
-static void wobble_update(Animation *animation,
-                          const AnimationProgress progress) {
-  int32_t t = (int32_t)progress;            // 0..65535
-  int32_t angle = (int32_t)(((int64_t)t * TRIG_MAX_ANGLE) >> 16);
-  int32_t sn = cos_lookup(angle - TRIG_MAX_ANGLE / 4);  // sin, Q16
-  s_wobble = (int)((int64_t)WOBBLE_AMP * sn * (65536 - t) /
-                   ((int64_t)65536 * 65536));
+// The appear wobble's hook: the offset moves the temps layer;
+// the diagonal application lives in temps_update_proc, which
+// reads family_wobble_offset.
+static void wobble_hook(int offset) {
   if (s_temps_layer) layer_mark_dirty(s_temps_layer);
-}
-
-// File scope: animation_set_implementation keeps the pointer.
-static const AnimationImplementation s_wobble_impl = {
-    .update = wobble_update};
-
-static void wobble_stopped(Animation *animation, bool finished,
-                           void *context) {
-  s_wobble_running = false;
-  s_wobble = 0;
-  if (s_temps_layer) layer_mark_dirty(s_temps_layer);
-}
-
-static void start_wobble(void) {
-  if (s_wobble_running) return;
-  s_wobble_running = true;
-  Animation *a = animation_create();
-  animation_set_delay(a, 250);  // user: wobble delay 250 ms
-  animation_set_duration(a, 600);  // user: wobble length (700 slightly too slow)
-  animation_set_implementation(a, &s_wobble_impl);
-  animation_set_handlers(
-      a, (AnimationHandlers){.stopped = wobble_stopped}, NULL);
-  animation_schedule(a);
 }
 
 static void window_appear(Window *window) {
-  start_wobble();
-  arm_exit_timer();
+  family_wobble_start(wobble_hook);
+  family_idle_arm();
 }
 
 static void window_load(Window *window) {
@@ -718,7 +617,7 @@ static void window_load(Window *window) {
   GRect b = layer_get_bounds(root);
   int w = b.size.w;
   int h = b.size.h;
-  window_set_background_color(window, bg_color());
+  window_set_background_color(window, family_bg_color());
 
 
 
@@ -786,14 +685,7 @@ static void init(void) {
   s_f46 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_46));
   s_f56 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_56));
   s_f40 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_40));
-  if (persist_exists(PERSIST_NIGHT)) {
-    s_night = persist_read_int(PERSIST_NIGHT) != 0;
-  }
-  if (persist_exists(PERSIST_SUNRISE)) {
-    s_sunrise = persist_read_int(PERSIST_SUNRISE);
-    s_sunset = persist_read_int(PERSIST_SUNSET);
-    eval_night();
-  }
+  family_night_load(PERSIST_NIGHT, PERSIST_SUNRISE, PERSIST_SUNSET);
   if (persist_exists(PERSIST_TEMP_MAX)) {
     s_temp_max = persist_read_int(PERSIST_TEMP_MAX);
     s_temp_min = persist_read_int(PERSIST_TEMP_MIN);

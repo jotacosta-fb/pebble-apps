@@ -6,11 +6,19 @@ typeface. Author: Jota.
 
 | App | What it does | Version |
 | --- | --- | --- |
-| [_weather](_weather/) | Min/max temperature and precipitation for the day. Nothing else. | 2.7.1 |
-| [_battery](_battery/) | Battery percentage as days remaining, learned from the watch's own drain. | 2.7.1 |
-| [_countdown](_countdown/) | A 45-minute countdown timer (adjustable), with a wakeup at zero. | 1.5.2 |
-| [_life](_life/) | Magic: The Gathering life counter, 20 to 0. | 1.10.1 |
-| [_watchface](_watchface/) | Watchface forked from Lean: huge tilted time, day/night aware, font-size setting. | 1.4.0 |
+| [_weather](_weather/) | Min/max temperature and precipitation for the day. Nothing else. | 2.7.2 |
+| [_battery](_battery/) | Battery percentage as days remaining, learned from the watch's own drain. | 2.7.2 |
+| [_countdown](_countdown/) | A 45-minute countdown timer (adjustable), with a wakeup at zero. | 1.5.3 |
+| [_life](_life/) | Magic: The Gathering life counter, 20 to 0. | 1.10.2 |
+| [_watchface](_watchface/) | Watchface forked from Lean: huge tilted time, day/night aware, font-size setting. | 1.4.1 |
+
+## Shared code
+
+The whole family shares one header, [`shared/family.h`](shared/family.h):
+the tunable parameters (wobble delay/length/amp, idle timeout), the
+appear-wobble engine, the day/night engine, the idle exit, and the
+common math helpers — each defined once. Apps override a default by
+#defining it before the include (e.g. _weather's longer, wider wobble).
 
 ## Installing
 

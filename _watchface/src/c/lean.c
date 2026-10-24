@@ -32,6 +32,7 @@
 // der Framebuffer ist auf beiden 8 Bit je Pixel.
 
 #include <pebble.h>
+#include "../../shared/family.h"
 
 // --------------------------------------------------------------- Diagnose
 
@@ -274,22 +275,6 @@ static void update_time_text(void) {
 
 // --------------------------------------------------------------- Rechenhilfen
 
-static uint32_t isqrt(uint32_t n) {
-  uint32_t root = 0;
-  uint32_t bit = 1u << 30;
-  while (bit > n) bit >>= 2;
-  while (bit) {
-    if (n >= root + bit) {
-      n -= root + bit;
-      root = (root >> 1) + bit;
-    } else {
-      root >>= 1;
-    }
-    bit >>= 2;
-  }
-  return root;
-}
-
 static inline int imin(int a, int b) { return a < b ? a : b; }
 static inline int imax(int a, int b) { return a > b ? a : b; }
 static inline int iabs(int a) { return a < 0 ? -a : a; }
@@ -313,7 +298,7 @@ static int32_t fit_scale(int w, int h, int32_t ac, int32_t as,
 #if defined(PBL_ROUND)
   // Auf dem runden Display zaehlt nur die Diagonale, der Winkel ist egal
   (void)ac; (void)as; (void)fb_h;
-  int64_t need = isqrt((uint32_t)(w * w + h * h));
+  int64_t need = family_isqrt((uint32_t)(w * w + h * h));
   int64_t avail = fb_w - 2 * FIT_MARGIN;
   if (need > avail) k = (avail << 16) / need;
 #else
@@ -325,18 +310,6 @@ static int32_t fit_scale(int w, int h, int32_t ac, int32_t as,
   if (need_h > avail_h && (avail_h << 16) / need_h < k) k = (avail_h << 16) / need_h;
 #endif
   return (int32_t)k;
-}
-
-// Mischt zwei Farben kanalweise, cov von 0 (Hintergrund) bis 4 (Ziffer)
-static uint8_t blend(uint8_t fg, uint8_t bg, int cov) {
-  uint8_t out = 0xC0;                      // voll deckend
-  for (int shift = 0; shift <= 4; shift += 2) {
-    int f = (fg >> shift) & 3;
-    int b = (bg >> shift) & 3;
-    int v = (f * cov + b * (4 - cov) + 2) / 4;
-    out |= (uint8_t)(v << shift);
-  }
-  return out;
 }
 
 static inline int bit_get(const uint8_t *mask, int x, int y, int w, int h) {
@@ -400,7 +373,7 @@ static int clearance(const Geo *g, const Box *b) {
     int gx = imax(o->x0 - b->x1, b->x0 - o->x1);
     int gy = imax(o->y0 - b->y1, b->y0 - o->y1);
     if (gx < 0 && gy < 0) return -1;      // ueberlappt
-    int dist = (gx > 0 && gy > 0) ? (int)isqrt((uint32_t)(gx * gx + gy * gy))
+    int dist = (gx > 0 && gy > 0) ? (int)family_isqrt((uint32_t)(gx * gx + gy * gy))
                                   : imax(gx, gy);
     best = imin(best, dist - DATE_GAP);
     if (best < 0) return -1;
@@ -415,7 +388,7 @@ static int clearance(const Geo *g, const Box *b) {
     int dx = (int)((rx * g->k) >> 32);
     int dy = (int)((ry * g->k) >> 32);
 #if defined(PBL_ROUND)
-    int c = g->radius - (int)isqrt((uint32_t)(dx * dx + dy * dy));
+    int c = g->radius - (int)family_isqrt((uint32_t)(dx * dx + dy * dy));
 #else
     int c = imin(g->half_w - iabs(dx), g->half_h - iabs(dy));
 #endif
@@ -539,7 +512,7 @@ static int32_t fit_scale_uncapped(int w, int h, int32_t ac, int32_t as,
                                   int fb_w, int fb_h) {
 #if defined(PBL_ROUND)
   (void)ac; (void)as; (void)fb_h;
-  int64_t need = isqrt((uint32_t)(w * w + h * h));
+  int64_t need = family_isqrt((uint32_t)(w * w + h * h));
   int64_t avail = fb_w - 2 * FIT_MARGIN;
   return (int32_t)((avail << 16) / need);
 #else
@@ -621,11 +594,11 @@ static void render_rotated(GBitmap *fb, const Frame *f, bool with_date) {
   }
 
   uint8_t lut[5];
-  for (int cov = 0; cov <= 4; cov++) lut[cov] = blend(s_color_fg.argb, bg, cov);
+  for (int cov = 0; cov <= 4; cov++) lut[cov] = family_blend(s_color_fg.argb, bg, cov);
 
   // Ohne Datum genuegt der Kreis, den der gedrehte Zeitblock ueberstreichen
   // kann; mit Datum wird das ganze Display abgefahren.
-  int radius = (int)(((int64_t)(isqrt((uint32_t)(f->tw * f->tw + f->th * f->th)) / 2 + 2) * f->k) >> 16) + 2;
+  int radius = (int)(((int64_t)(family_isqrt((uint32_t)(f->tw * f->tw + f->th * f->th)) / 2 + 2) * f->k) >> 16) + 2;
   if (with_date) radius = imax(w, h);
   int y0 = imax(dst_cy - radius, 0);
   int y1 = imin(dst_cy + radius, h - 1);
@@ -1061,55 +1034,27 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
 // --------------------------------------------------------------- Einflug
 // Appear animation (user): when the face comes to the front, the
 // two number rows wobble sideways in opposite directions and
-// settle back home (v1.2.0 re-spec — see fly_anim_update). The
-// offsets only exist while this runs; the stopped handler zeroes
-// them, so the resting face renders exactly as before.
+// settle back home (v1.2.0 re-spec). The motion itself is the
+// family engine (shared/family.h); the hook below turns the
+// engine's offset into the two row offsets render_rotated
+// samples with. The offsets only exist while this runs; at rest
+// the face renders exactly as before. Delay and length are user
+// settings, so the engine is retuned on every start.
 
-static bool s_fly_running;
-
-static void fly_anim_update(Animation *animation,
-                            const AnimationProgress progress) {
-  int32_t t = (int32_t)progress;            // 0..65535
-  // User re-spec (v1.2.0): on app-return the face is ALREADY on
-  // screen, so a fly-in from off-screen starts with a jump. The
-  // rows instead start at home, wobble to opposite sides and
-  // settle back: one full sine swing with a linear decay.
-  int32_t angle = (int32_t)(((int64_t)t * TRIG_MAX_ANGLE) >> 16);
-  int32_t sn = cos_lookup(angle - TRIG_MAX_ANGLE / 4);  // sin, Q16
-  int w = (int)((int64_t)WOBBLE_AMP * sn * (65536 - t) /
-                ((int64_t)65536 * 65536));
-  s_fly_off_l = w;
-  s_fly_off_r = -w;
-  layer_mark_dirty(s_canvas);
-}
-
-// File scope: animation_set_implementation keeps the pointer.
-static const AnimationImplementation s_fly_impl = {
-    .update = fly_anim_update};
-
-static void fly_anim_stopped(Animation *animation, bool finished,
-                             void *context) {
-  s_fly_running = false;
-  s_fly_off_l = 0;
-  s_fly_off_r = 0;
-  layer_mark_dirty(s_canvas);
+static void fly_hook(int offset) {
+  s_fly_off_l = offset;
+  s_fly_off_r = -offset;
+  if (s_canvas) layer_mark_dirty(s_canvas);
 }
 
 static void start_fly(void) {
-  if (s_fly_running) return;
-  s_fly_running = true;
-  Animation *a = animation_create();
   // On app-return the face restarts under the system's exit
   // transition (~300 ms): an immediate flight plays out hidden
   // underneath it (v1.1.0/v1.1.1 — the user saw it only at face
-  // start). Delay the flight so it begins once the face is
-  // actually on screen.
-  animation_set_delay(a, s_anim_delay);
-  animation_set_duration(a, s_wobble_len);
-  animation_set_implementation(a, &s_fly_impl);
-  animation_set_handlers(
-      a, (AnimationHandlers){.stopped = fly_anim_stopped}, NULL);
-  animation_schedule(a);
+  // start). The configured delay lets the flight begin once the
+  // face is actually on screen.
+  family_wobble_configure(WOBBLE_AMP, s_anim_delay, s_wobble_len);
+  family_wobble_start(fly_hook);
 }
 
 static void window_appear(Window *window) { start_fly(); }

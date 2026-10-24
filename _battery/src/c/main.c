@@ -1,4 +1,5 @@
 #include <pebble.h>
+#include "../../shared/family.h"
 
 // Battery Days — a deliberately tiny battery app.
 // Shows exactly: current battery %, and a prediction of how many days
@@ -14,16 +15,11 @@ static Window *s_window;
 static GFont s_f68, s_f48, s_f56, s_f40;  // LECO 1976 (custom font)
 static GFont s_p34, s_p28, s_p24, s_p20;  // LECO 1976 %-only fonts at HALF the digit heights (user: full size was too large)
 static Layer *s_pct_layer;
-// Appear wobble (user, v2.4.0 — the _watchface v1.2.0 motion
-// brought to the apps): when the app comes to the front, the
+// Appear wobble is the family engine (shared/family.h): the
 // readout splits around its decimal dot — left side slides
-// left, right side slides right, dot stays (v2.6.0; before
-// that the text wobbled sideways as one piece, and the battery
-// body never moves). While charging there is no dot, so the
-// % readout keeps the plain sideways wobble. s_wobble is the
-// current offset in px; 0 at rest.
-static int s_wobble;
-#define WOBBLE_AMP 10
+// left, right side slides right, dot stays (v2.6.0). While
+// charging there is no dot, so the % readout keeps the plain
+// sideways wobble. The battery body never moves.
 static Layer *s_days_layer;
 
 static int s_pct = -1;         // -1 = no reading yet
@@ -38,30 +34,14 @@ static int s_days_x10 = -1;    // predicted days left x10
 #define PERSIST_SUNRISE 5
 #define PERSIST_SUNSET 6
 
-// Night mode (user): same inversion as _weather — after sunset,
-// black background and white ink. A small JS companion fetches
-// sunrise/sunset from Open-Meteo and sends NIGHT.
-static bool s_night = false;
-static int s_sunrise = 0, s_sunset = 0;  // epochs from the phone
+// Night mode is the family engine (shared/family.h): a small
+// JS companion fetches sunrise/sunset from Open-Meteo; the
+// watch stores them and re-evaluates day/night on the tick.
 static void refresh_display(void);
 
-// Recompute day/night from the stored sunrise/sunset and the
-// current time: the apps now react to time passing (a minute
-// tick) instead of only flipping when a phone message arrives.
-static void eval_night(void) {
-  if (s_sunrise > 0 && s_sunset > s_sunrise) {
-    time_t now = time(NULL);
-    s_night = (now < s_sunrise || now >= s_sunset);
-  }
-}
-
 static void tick_handler(struct tm *tick_time, TimeUnits units) {
-  bool was = s_night;
-  eval_night();
-  if (s_night != was) refresh_display();
+  if (family_night_tick()) refresh_display();
 }
-static GColor ink_color(void) { return s_night ? GColorWhite : GColorBlack; }
-static GColor bg_color(void) { return s_night ? GColorBlack : GColorWhite; }
 #define DEFAULT_RATE_X10 150   // 15%/day (~6-7 days) until a rate is learned
 
 // ---------- Battery icon ----------
@@ -80,10 +60,10 @@ static void draw_battery_bg(GContext *ctx, GRect b) {
   int sw = 3;
 
   // Outline + terminal nub
-  graphics_context_set_stroke_color(ctx, ink_color());
+  graphics_context_set_stroke_color(ctx, family_ink_color());
   graphics_context_set_stroke_width(ctx, sw);
   graphics_draw_rect(ctx, GRect(x, y, bw, bh));
-  graphics_context_set_fill_color(ctx, ink_color());
+  graphics_context_set_fill_color(ctx, family_ink_color());
   int nub_h = bh / 3;
   graphics_fill_rect(ctx, GRect(x + bw + 2, y + (bh - nub_h) / 2, 5, nub_h),
                      0, GCornerNone);
@@ -103,11 +83,11 @@ static void draw_battery_bg(GContext *ctx, GRect b) {
     graphics_context_set_fill_color(
         ctx, low ? GColorRed
                  : (s_charging
-                        ? (s_night ? GColorIslamicGreen : GColorMintGreen)
-                        : (s_night ? GColorDarkGreen : GColorScreaminGreen)));
+                        ? (family_night ? GColorIslamicGreen : GColorMintGreen)
+                        : (family_night ? GColorDarkGreen : GColorScreaminGreen)));
 #else
     graphics_context_set_fill_color(ctx,
-                                    s_night ? GColorDarkGray : GColorLightGray);
+                                    family_night ? GColorDarkGray : GColorLightGray);
 #endif
     graphics_fill_rect(ctx,
         GRect(x + sw + 2, y + sw + 2, fill_w, bh - 2 * sw - 4),
@@ -136,7 +116,7 @@ static void draw_days_big(GContext *ctx, GRect b) {
   int box_h = big ? 78 : 54;
   if (s_days_x10 < 0) {
     graphics_draw_text(ctx, "--", s_f48,
-                       GRect(s_wobble, box_y, b.size.w, box_h),
+                       GRect(family_wobble_offset, box_y, b.size.w, box_h),
                        GTextOverflowModeFill, GTextAlignmentCenter, NULL);
     return;
   }
@@ -175,13 +155,13 @@ static void draw_days_big(GContext *ctx, GRect b) {
   // the left side slides left, the right side slides right, the
   // dot itself stays exactly in place.
   int base = (b.size.w - total) / 2;
-  int int_x = base - s_wobble;
+  int int_x = base - family_wobble_offset;
   int dot_x = base + i_sz.w + dot_gap;
-  int frac_x = dot_x + dot + dot_gap + s_wobble;
+  int frac_x = dot_x + dot + dot_gap + family_wobble_offset;
   graphics_draw_text(ctx, int_buf, font,
                      GRect(int_x, box_y, i_sz.w + 2, box_h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
-  graphics_context_set_fill_color(ctx, ink_color());
+  graphics_context_set_fill_color(ctx, family_ink_color());
   graphics_fill_rect(ctx,
                      GRect(dot_x, box_y + i_sz.h - dot, dot, dot), 0,
                      GCornerNone);
@@ -200,7 +180,7 @@ static void draw_days_big(GContext *ctx, GRect b) {
 static void pct_update_proc(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
   bool big = b.size.w >= 180;
-  graphics_context_set_text_color(ctx, ink_color());
+  graphics_context_set_text_color(ctx, family_ink_color());
 
   // Merged layout: the big battery is the background; digits on top.
   draw_battery_bg(ctx, b);
@@ -208,7 +188,7 @@ static void pct_update_proc(Layer *layer, GContext *ctx) {
   if (s_pct < 0) {
     GFont f = s_f48;
     graphics_draw_text(ctx, "--", f,
-                       GRect(s_wobble, 0, b.size.w, b.size.h),
+                       GRect(family_wobble_offset, 0, b.size.w, b.size.h),
                        GTextOverflowModeFill,
                        GTextAlignmentCenter, NULL);
     return;
@@ -244,7 +224,7 @@ GFont font = big ? s_f68 : s_f48;
   }
 
   int total = d_sz.w + 4 + p_sz.w;
-  int x = (b.size.w - total) / 2 + s_wobble;
+  int x = (b.size.w - total) / 2 + family_wobble_offset;
   graphics_draw_text(ctx, buf, font, GRect(x, box_y, d_sz.w + 2, box_h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
   // The %'s box is bottom-aligned with the digits' box so the
@@ -305,7 +285,7 @@ static void days_update_proc(Layer *layer, GContext *ctx) {
       FONT_KEY_GOTHIC_28);
 
   if (s_charging) {
-    graphics_context_set_text_color(ctx, ink_color());
+    graphics_context_set_text_color(ctx, family_ink_color());
     graphics_draw_text(ctx, "charging", font, b,
                        GTextOverflowModeFill, GTextAlignmentCenter, NULL);
     return;
@@ -314,7 +294,7 @@ static void days_update_proc(Layer *layer, GContext *ctx) {
   if (s_days_x10 >= 0 && s_days_x10 <= 10 && s_pct >= 0) {
     char pct_buf[8];
     snprintf(pct_buf, sizeof(pct_buf), "%d%%", s_pct);
-    graphics_context_set_text_color(ctx, ink_color());
+    graphics_context_set_text_color(ctx, family_ink_color());
     graphics_draw_text(ctx, pct_buf, font, b,
                        GTextOverflowModeFill, GTextAlignmentCenter, NULL);
   }
@@ -322,7 +302,7 @@ static void days_update_proc(Layer *layer, GContext *ctx) {
 }
 
 static void refresh_display(void) {
-  if (s_window) window_set_background_color(s_window, bg_color());
+  if (s_window) window_set_background_color(s_window, family_bg_color());
   layer_mark_dirty(s_days_layer);
   layer_mark_dirty(s_pct_layer);  // draws digits + battery background
   layer_mark_dirty(s_pct_layer);
@@ -333,26 +313,8 @@ static void battery_handler(BatteryChargeState state) {
   refresh_display();
 }
 
-// ---------- Idle timeout (user, v2.7.0) ----------
-// After 30 seconds with no interaction the app pops itself back
-// to the watchface — the same pop the Up button does. Select and
-// coming to the front re-arm it; battery events do not (the
-// charger changing state is not the user doing anything).
-#define EXIT_TIMEOUT_MS 30000
-static AppTimer *s_exit_timer;
-
-static void exit_timer_cb(void *context) {
-  s_exit_timer = NULL;
-  window_stack_pop(true);
-}
-
-static void arm_exit_timer(void) {
-  if (s_exit_timer) app_timer_cancel(s_exit_timer);
-  s_exit_timer = app_timer_register(EXIT_TIMEOUT_MS, exit_timer_cb, NULL);
-}
-
 static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
-  arm_exit_timer();
+  family_idle_arm();
   sample_battery();
   refresh_display();
 }
@@ -369,52 +331,16 @@ static void click_config_provider(void *context) {
 
 // ---------- Window ----------
 
-// ---------- Appear wobble ----------
-// One full sine swing with a linear decay, sideways: the offset
-// starts at 0 (the app is already on screen), swings one way,
-// back past centre smaller, and settles at 0. Delayed 400 ms so
-// the system's launch slide finishes first — the recipe the
-// user approved on _watchface. The stopped handler zeroes the
-// offset, so the resting display is unchanged.
-
-static bool s_wobble_running;
-
-static void wobble_update(Animation *animation,
-                          const AnimationProgress progress) {
-  int32_t t = (int32_t)progress;            // 0..65535
-  int32_t angle = (int32_t)(((int64_t)t * TRIG_MAX_ANGLE) >> 16);
-  int32_t sn = cos_lookup(angle - TRIG_MAX_ANGLE / 4);  // sin, Q16
-  s_wobble = (int)((int64_t)WOBBLE_AMP * sn * (65536 - t) /
-                   ((int64_t)65536 * 65536));
+// The appear wobble's hook: the offset moves the readout layer;
+// the split application lives in the draw code, which reads
+// family_wobble_offset.
+static void wobble_hook(int offset) {
   if (s_pct_layer) layer_mark_dirty(s_pct_layer);
-}
-
-// File scope: animation_set_implementation keeps the pointer.
-static const AnimationImplementation s_wobble_impl = {
-    .update = wobble_update};
-
-static void wobble_stopped(Animation *animation, bool finished,
-                           void *context) {
-  s_wobble_running = false;
-  s_wobble = 0;
-  if (s_pct_layer) layer_mark_dirty(s_pct_layer);
-}
-
-static void start_wobble(void) {
-  if (s_wobble_running) return;
-  s_wobble_running = true;
-  Animation *a = animation_create();
-  animation_set_delay(a, 250);  // user: wobble delay 250 ms
-  animation_set_duration(a, 400);  // user: wobble length 400 ms
-  animation_set_implementation(a, &s_wobble_impl);
-  animation_set_handlers(
-      a, (AnimationHandlers){.stopped = wobble_stopped}, NULL);
-  animation_schedule(a);
 }
 
 static void window_appear(Window *window) {
-  start_wobble();
-  arm_exit_timer();
+  family_wobble_start(wobble_hook);
+  family_idle_arm();
 }
 
 static void window_load(Window *window) {
@@ -422,7 +348,7 @@ static void window_load(Window *window) {
   GRect b = layer_get_bounds(root);
   int w = b.size.w;
   int h = b.size.h;
-  window_set_background_color(window, bg_color());
+  window_set_background_color(window, family_bg_color());
 
 
 
@@ -450,21 +376,11 @@ static void window_unload(Window *window) {
 }
 
 static void inbox_received(DictionaryIterator *iter, void *context) {
-  Tuple *t_rise = dict_find(iter, MESSAGE_KEY_SUNRISE);
-  Tuple *t_set = dict_find(iter, MESSAGE_KEY_SUNSET);
-  if (t_rise && t_set) {
-    s_sunrise = (int)t_rise->value->int32;
-    s_sunset = (int)t_set->value->int32;
-    persist_write_int(PERSIST_SUNRISE, s_sunrise);
-    persist_write_int(PERSIST_SUNSET, s_sunset);
-    eval_night();
-  }
-  Tuple *t = dict_find(iter, MESSAGE_KEY_NIGHT);
-  if (t) {
-    s_night = t->value->int32 != 0;
-    persist_write_int(PERSIST_NIGHT, s_night ? 1 : 0);
-    refresh_display();
-  }
+  int flags = family_night_apply(iter, MESSAGE_KEY_SUNRISE,
+                                 MESSAGE_KEY_SUNSET, MESSAGE_KEY_NIGHT,
+                                 PERSIST_SUNRISE, PERSIST_SUNSET,
+                                 PERSIST_NIGHT);
+  if (flags & 2) refresh_display();
 }
 
 static void request_night(void) {
@@ -476,19 +392,11 @@ static void request_night(void) {
 }
 
 static void init(void) {
-  // Load the persisted night flag FIRST, before the window exists:
-  // loading it after the push (the v2.0.0 bug) painted the first
-  // frame light and only flipped dark when the phone replied.
-  // _weather loads its persists up front — that's why it never
-  // flashed.
-  if (persist_exists(PERSIST_NIGHT)) {
-    s_night = persist_read_int(PERSIST_NIGHT) != 0;
-  }
-  if (persist_exists(PERSIST_SUNRISE)) {
-    s_sunrise = persist_read_int(PERSIST_SUNRISE);
-    s_sunset = persist_read_int(PERSIST_SUNSET);
-    eval_night();
-  }
+  // Load the persisted night state FIRST, before the window
+  // exists: loading it after the push (the v2.0.0 bug) painted
+  // the first frame light and only flipped dark when the phone
+  // replied.
+  family_night_load(PERSIST_NIGHT, PERSIST_SUNRISE, PERSIST_SUNSET);
   s_f68 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_68));
   s_f48 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_48));
   s_f56 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_56));

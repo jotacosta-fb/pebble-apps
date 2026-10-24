@@ -1,4 +1,5 @@
 #include <pebble.h>
+#include "../../shared/family.h"
 
 // _timer — a countdown timer. Just the time, nothing else. The
 // state is marked on the time itself: a thick underline under
@@ -38,17 +39,12 @@ static WakeupId s_wakeup_id = -1;
 static bool s_blink_on = true;
 
 // Underline wobble (user, v1.5.0; re-scoped v1.5.1): the family
-// motion, but ONLY the ready underline moves — the time itself
-// sits still. It runs when the app is shown and on reset, the
-// two moments the underline (re)appears; if no underline is
-// visible (restored running/paused/done), nothing animates.
-// One full sine swing with a linear decay, starting and ending
-// at 0, so the resting display is unchanged. s_wobble is the
-// current offset in px. Any button press stops it.
-static int s_wobble;
-#define WOBBLE_AMP 10
-static void wobble_stop(void);   // defined with the animation code below
-static void start_wobble(void);  // defined with the animation code below
+// engine (shared/family.h), but ONLY the ready underline moves
+// — the time itself sits still. It runs when the app is shown
+// and on reset, the two moments the underline (re)appears; if
+// no underline is visible (restored running/paused/done),
+// nothing animates. Any button press stops it.
+static void wobble_hook(int offset);  // defined with the window code below
 
 static int display_seconds(void) {
   if (s_state == ST_RUNNING) {
@@ -131,12 +127,12 @@ static void reset_timer(void) {
   cancel_wakeup();
   save_state();
   refresh_display();
-  start_wobble();  // the underline is back: it wobbles (user, v1.5.1)
+  family_wobble_start(wobble_hook);  // the underline is back: it wobbles (user, v1.5.1)
 }
 
 static void select_click_handler(ClickRecognizerRef recognizer,
                                  void *context) {
-  wobble_stop();
+  family_wobble_stop();
   if (s_state == ST_RUNNING) {
     pause_timer();
   } else if (s_state == ST_DONE) {
@@ -148,13 +144,13 @@ static void select_click_handler(ClickRecognizerRef recognizer,
 
 static void select_long_handler(ClickRecognizerRef recognizer,
                                 void *context) {
-  wobble_stop();
+  family_wobble_stop();
   reset_timer();
   vibes_short_pulse();
 }
 
 static void adjust_minutes(int delta) {
-  wobble_stop();
+  family_wobble_stop();
   if (s_state == ST_RUNNING || s_state == ST_DONE) return;
   int value = s_remaining + delta * 60;
   if (value < MIN_SET_SECONDS) value = MIN_SET_SECONDS;
@@ -263,7 +259,7 @@ static void main_update_proc(Layer *layer, GContext *ctx) {
     int u_ext = big ? 6 : 4;
     graphics_context_set_fill_color(ctx, GColorDarkGray);
     graphics_fill_rect(ctx,
-                       GRect(x + s_wobble - u_ext, glyph_bottom + 5,
+                       GRect(x + family_wobble_offset - u_ext, glyph_bottom + 5,
                              min_sz.w + 2 * u_ext, big ? 8 : 6),
                        0, GCornerNone);
   }
@@ -290,67 +286,17 @@ static void main_update_proc(Layer *layer, GContext *ctx) {
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
 }
 
-// ---------- Appear wobble ----------
-// One full sine swing with a linear decay: the offset starts at
-// 0 (the app is already on screen), swings one way, back past
-// centre smaller, and settles at 0. Delayed 250 ms so the
-// system's launch slide finishes first — the recipe the user
-// approved on _watchface and the sibling apps use. The stopped
-// handler zeroes the offset, so the resting display is
-// unchanged.
-
-static bool s_wobble_running;
-static Animation *s_wobble_anim;
-
-static void wobble_update(Animation *animation,
-                          const AnimationProgress progress) {
-  int32_t t = (int32_t)progress;            // 0..65535
-  int32_t angle = (int32_t)(((int64_t)t * TRIG_MAX_ANGLE) >> 16);
-  int32_t sn = cos_lookup(angle - TRIG_MAX_ANGLE / 4);  // sin, Q16
-  s_wobble = (int)((int64_t)WOBBLE_AMP * sn * (65536 - t) /
-                   ((int64_t)65536 * 65536));
+// The underline wobble's hook: the offset moves the main layer;
+// the application lives in main_update_proc, which reads
+// family_wobble_offset for the underline only.
+static void wobble_hook(int offset) {
   if (s_main_layer) layer_mark_dirty(s_main_layer);
-}
-
-// File scope: animation_set_implementation keeps the pointer.
-static const AnimationImplementation s_wobble_impl = {
-    .update = wobble_update};
-
-static void wobble_stopped(Animation *animation, bool finished,
-                           void *context) {
-  s_wobble_running = false;
-  s_wobble_anim = NULL;
-  s_wobble = 0;
-  if (s_main_layer) layer_mark_dirty(s_main_layer);
-}
-
-static void wobble_stop(void) {
-  if (!s_wobble_running) return;
-  Animation *a = s_wobble_anim;
-  s_wobble_anim = NULL;
-  s_wobble_running = false;
-  s_wobble = 0;
-  if (a) animation_unschedule(a);  // may re-enter wobble_stopped; state already zeroed
-  if (s_main_layer) layer_mark_dirty(s_main_layer);
-}
-
-static void start_wobble(void) {
-  if (s_wobble_running) return;
-  s_wobble_running = true;
-  Animation *a = animation_create();
-  s_wobble_anim = a;
-  animation_set_delay(a, 250);     // user: wobble delay 250 ms
-  animation_set_duration(a, 400);  // user: wobble length 400 ms
-  animation_set_implementation(a, &s_wobble_impl);
-  animation_set_handlers(
-      a, (AnimationHandlers){.stopped = wobble_stopped}, NULL);
-  animation_schedule(a);
 }
 
 static void window_appear(Window *window) {
   // Shown with no underline (restored running/paused/done):
   // don't animate (user, v1.5.1).
-  if (s_state == ST_EDIT) start_wobble();
+  if (s_state == ST_EDIT) family_wobble_start(wobble_hook);
 }
 
 // ---------- Backdrop: the paused mark ----------
