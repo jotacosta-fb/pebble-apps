@@ -2,12 +2,29 @@
 #include "../../shared/family.h"
 
 // Battery Days — a deliberately tiny battery app.
-// Shows exactly: current battery %, and a prediction of how many days
-// are left in this charge. The prediction learns this watch's real
-// drain: each time the app opens (and on every battery event while it
-// is open) it compares % and time against the last sample, blends the
-// observed %/day into a stored rate, and divides the current charge
-// by that rate. Until a rate is learned it assumes 15%/day.
+// Shows exactly: current battery %, and a prediction of how many
+// days are left in this charge: days = % / learned drain rate
+// (%/day); until a rate is learned it assumes 15%/day.
+//
+// How the rate is learned (v2.8.0 — rewritten after the old
+// method drifted): the old code timed each 1% step and blended
+// the observations 2:1 into a stored rate. Percent steps are
+// not evenly spaced — the battery's voltage curve is flat
+// mid-discharge and the firmware smooths its readings — so
+// step times kept stretching, the "observed" rate kept
+// shrinking, and the prediction kept growing (77% read as 14
+// days). Now the app anchors the START of each discharge
+// stretch (charge % and time when the charger came off, or
+// the first sample) plus the lowest % seen since, and
+// computes the rate over the whole stretch — but only once
+// the stretch is at least 12 hours old and at least 3% deep,
+// so it rests on real signal. Within a stretch the window
+// only grows, so estimates converge instead of drifting. If
+// the charge ever rises 4% or more off its low without the
+// app seeing a charger, a charge happened in between: that
+// stretch is discarded and re-anchored rather than averaged
+// in. (A top-up smaller than that can still slip through;
+// the long window limits the damage.)
 
 static Window *s_window;
 
@@ -28,8 +45,10 @@ static int s_rate_x10 = 0;     // drain rate in % per day x10, 0 = not learned
 static int s_days_x10 = -1;    // predicted days left x10
 
 #define PERSIST_RATE_X10 1
-#define PERSIST_LAST_PCT 2
-#define PERSIST_LAST_TIME 3
+#define PERSIST_LAST_PCT 2    // now the stretch ANCHOR % (see header)
+#define PERSIST_LAST_TIME 3   // now the stretch ANCHOR time
+#define PERSIST_LOW_PCT 7     // lowest % seen in the current stretch
+#define PERSIST_SCHEMA 8      // learning-schema version (1 = v2.8.0)
 #define PERSIST_NIGHT 4
 #define PERSIST_SUNRISE 5
 #define PERSIST_SUNSET 6
@@ -243,31 +262,54 @@ static void sample_battery(void) {
   s_pct = bs.charge_percent;
   s_charging = bs.is_charging || bs.is_plugged;
 
+  // One-time reset (v2.8.0): rates learned by the old per-step
+  // method are poisoned (see header) — relearn from scratch.
+  if (!persist_exists(PERSIST_SCHEMA) ||
+      persist_read_int(PERSIST_SCHEMA) != 1) {
+    persist_delete(PERSIST_RATE_X10);
+    persist_delete(PERSIST_LAST_PCT);
+    persist_delete(PERSIST_LAST_TIME);
+    persist_delete(PERSIST_LOW_PCT);
+    persist_write_int(PERSIST_SCHEMA, 1);
+  }
+
   int rate_x10 = persist_exists(PERSIST_RATE_X10)
       ? persist_read_int(PERSIST_RATE_X10) : 0;
   int now = (int)time(NULL);
 
-  if (!s_charging && persist_exists(PERSIST_LAST_PCT) &&
-      persist_exists(PERSIST_LAST_TIME)) {
-    int last_pct = persist_read_int(PERSIST_LAST_PCT);
-    int elapsed = now - persist_read_int(PERSIST_LAST_TIME);
-    int drop = last_pct - s_pct;
-    if (drop > 0 && elapsed >= 3600) {
+  bool have_anchor = persist_exists(PERSIST_LAST_PCT) &&
+                     persist_exists(PERSIST_LAST_TIME);
+  int anchor_pct = have_anchor ? persist_read_int(PERSIST_LAST_PCT) : s_pct;
+  int anchor_time = have_anchor ? persist_read_int(PERSIST_LAST_TIME) : now;
+  int low_pct = persist_exists(PERSIST_LOW_PCT)
+      ? persist_read_int(PERSIST_LOW_PCT) : s_pct;
+
+  if (s_charging) {
+    // On the charger the stretch has not started: the anchor
+    // follows the charge, so unplugging starts the stretch.
+    anchor_pct = s_pct; anchor_time = now; low_pct = s_pct;
+  } else if (!have_anchor) {
+    anchor_pct = s_pct; anchor_time = now; low_pct = s_pct;
+  } else if (s_pct >= low_pct + 4) {
+    // The charge rose well off its low without the app seeing
+    // a charger: a charge happened mid-stretch. Discard the
+    // stretch (no rate learned from it) and re-anchor here.
+    anchor_pct = s_pct; anchor_time = now; low_pct = s_pct;
+  } else {
+    if (s_pct < low_pct) low_pct = s_pct;
+    int drop = anchor_pct - s_pct;
+    int elapsed = now - anchor_time;
+    if (drop >= 3 && elapsed >= 43200) {
       int observed_x10 = (int)((long)drop * 864000 / elapsed);
       if (observed_x10 >= 10 && observed_x10 <= 1000) {
-        rate_x10 = rate_x10 ? (rate_x10 * 2 + observed_x10) / 3 : observed_x10;
+        rate_x10 = observed_x10;
         persist_write_int(PERSIST_RATE_X10, rate_x10);
       }
-      persist_write_int(PERSIST_LAST_PCT, s_pct);
-      persist_write_int(PERSIST_LAST_TIME, now);
-    } else if (drop < 0 || elapsed >= 86400) {
-      persist_write_int(PERSIST_LAST_PCT, s_pct);
-      persist_write_int(PERSIST_LAST_TIME, now);
     }
-  } else {
-    persist_write_int(PERSIST_LAST_PCT, s_pct);
-    persist_write_int(PERSIST_LAST_TIME, now);
   }
+  persist_write_int(PERSIST_LAST_PCT, anchor_pct);
+  persist_write_int(PERSIST_LAST_TIME, anchor_time);
+  persist_write_int(PERSIST_LOW_PCT, low_pct);
 
   s_rate_x10 = rate_x10;
   int eff_rate = rate_x10 > 0 ? rate_x10 : DEFAULT_RATE_X10;
