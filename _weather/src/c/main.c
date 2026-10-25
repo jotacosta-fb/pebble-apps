@@ -2,9 +2,11 @@
 #include <math.h>
 
 // Family overrides (shared/family.h): the wobble runs longer
-// and wider here than the family norm (user-tuned).
+// and wider here than the family norm, and starts earlier
+// (user-tuned; delay 100 ms since v2.7.4, family norm 250).
 #define FAMILY_WOBBLE_LENGTH_MS 600
 #define FAMILY_WOBBLE_AMP 12
+#define FAMILY_WOBBLE_DELAY_MS 100
 #include "../../shared/family.h"
 
 // MinMax Weather — a deliberately tiny weather app.
@@ -408,7 +410,7 @@ static void temps_update_proc(Layer *layer, GContext *ctx) {
 
   // The wobble is diagonal (user, v2.6.0): the max slides up
   // and right, the min down and left — along the ladder. The
-  // min's filled circle stays in place (the anchor); the max's
+  // min's filled square stays in place (the anchor); the max's
   // ring follows its number (user correction, v2.6.1 — the
   // ring's position below gets the same offsets as the max).
   graphics_draw_text(ctx, max_buf, f_max,
@@ -420,17 +422,17 @@ static void temps_update_proc(Layer *layer, GContext *ctx) {
                            min_sz.w + 2, b.size.h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
 
-  // The min's degree is a FILLED circle (user, v2.7.3 — a dot
-  // where a filled square used to sit) — same size and spot as
-  // the max's ring, but solid; the max keeps the hollow square.
+  // The min's degree is a FILLED square (user — the circle
+  // tried in v2.7.3 was reverted in v2.7.4: rectangular is the
+  // cleaner design) — same size and spot as the max's ring,
+  // but solid; the max keeps the hollow square.
   {
     int mdeg_sz = big ? 11 : 9;
     int mdeg_x = min_x + min_sz.w + (big ? 4 : 3);
     int mdeg_y = min_box_y + min_h * 30 / 100 + 1;
     graphics_context_set_fill_color(ctx, family_ink_color());
-    graphics_fill_circle(
-        ctx, GPoint(mdeg_x + mdeg_sz / 2, mdeg_y + mdeg_sz / 2),
-        mdeg_sz / 2);
+    graphics_fill_rect(ctx, GRect(mdeg_x, mdeg_y, mdeg_sz, mdeg_sz), 0,
+                       GCornerNone);
   }
 
   // No separator at all (user: remove the divider).
