@@ -728,19 +728,21 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   render_rotated(fb, &f, with_date);
   graphics_release_frame_buffer(ctx, fb);
 
-  // 4. Quiet-Time-Marke (user, v1.4.3): ist die Ruhezeit aktiv, sitzt
-  // ein kleines gefuelltes Dreieck in der oberen rechten Bildschirm-
-  // ecke — in Bildschirmkoordinaten (nicht mitgedreht), in der
-  // Ziffernfarbe, zuletzt gezeichnet.
+  // 4. Quiet-Time-Marke (user, v1.4.3; groesser und neu gerastert
+  // v1.4.4): ist die Ruhezeit aktiv, sitzt ein gefuelltes Dreieck
+  // in der oberen rechten Bildschirmecke — in Bildschirm-
+  // koordinaten (nicht mitgedreht), in der Ziffernfarbe, zuletzt
+  // gezeichnet. Zeile fuer Zeile gefuellt statt als GPath: der
+  // Pfad liess die letzte Pixelspalte am rechten Rand aus (user
+  // fiel es auf); so endet jede Zeile exakt an der letzten Spalte.
   if (quiet_time_is_active()) {
-    static const GPoint qt_points[] = {{0, 0}, {-15, 0}, {0, 15}};
-    static const GPathInfo qt_info = {.num_points = 3,
-                                      .points = (GPoint *)qt_points};
-    static GPath *qt_path = NULL;
-    if (!qt_path) qt_path = gpath_create(&qt_info);
-    gpath_move_to(qt_path, GPoint(bounds.size.w - 1, 0));
+    const int leg = 24;
     graphics_context_set_fill_color(ctx, s_color_fg);
-    gpath_draw_filled(ctx, qt_path);
+    for (int y = 0; y < leg; y++) {
+      int x = bounds.size.w - leg + y;
+      graphics_fill_rect(ctx, GRect(x, y, bounds.size.w - x, 1), 0,
+                         GCornerNone);
+    }
   }
 }
 
