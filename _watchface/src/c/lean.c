@@ -208,7 +208,7 @@ static bool     s_date_placed = false;
 
 // Datumsschriften: die grosse, und eine kleinere fuer Winkel, bei denen die
 // grosse nirgends Platz findet (etwa 90 Grad auf Emery)
-#define DATE_FONTS  2
+#define DATE_FONTS  4
 static GFont s_date_fonts[DATE_FONTS];
 
 // Merkt sich, wofuer die Platzierung zuletzt berechnet wurde. Die Suche ist
@@ -649,8 +649,11 @@ static bool capture_date(GContext *ctx, GRect bounds, GFont font) {
 }
 
 // Liest das Datum ein und sorgt fuer eine Platzierung. Die Suche laeuft nur,
-// wenn sich Winkel, Zeitblock oder Datumstext geaendert haben; dann zuerst
-// mit der grossen Schrift, und erst wenn die nirgends passt, mit der kleinen.
+// wenn sich Winkel, Zeitblock oder Datumstext geaendert haben; dann die
+// Datumsschriften der Reihe nach von gross nach klein (28/22/16/12), bis
+// das Paar irgendwo zusammen passt. Seit v1.4.3 (user) verschwindet das
+// Datum nicht mehr, wenn es bei grosser Zeiteinstellung (z. B. 114 %) in
+// den zwei grossen Schriften keinen Platz hat — es wird einfach kleiner.
 // Liefert false, wenn das Datum nirgends Platz hat.
 static bool prepare_date(GContext *ctx, GRect bounds, const Frame *f) {
   LayoutKey key;
@@ -724,6 +727,21 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   if (!fb) return;
   render_rotated(fb, &f, with_date);
   graphics_release_frame_buffer(ctx, fb);
+
+  // 4. Quiet-Time-Marke (user, v1.4.3): ist die Ruhezeit aktiv, sitzt
+  // ein kleines gefuelltes Dreieck in der oberen rechten Bildschirm-
+  // ecke — in Bildschirmkoordinaten (nicht mitgedreht), in der
+  // Ziffernfarbe, zuletzt gezeichnet.
+  if (quiet_time_is_active()) {
+    static const GPoint qt_points[] = {{0, 0}, {-15, 0}, {0, 15}};
+    static const GPathInfo qt_info = {.num_points = 3,
+                                      .points = (GPoint *)qt_points};
+    static GPath *qt_path = NULL;
+    if (!qt_path) qt_path = gpath_create(&qt_info);
+    gpath_move_to(qt_path, GPoint(bounds.size.w - 1, 0));
+    graphics_context_set_fill_color(ctx, s_color_fg);
+    gpath_draw_filled(ctx, qt_path);
+  }
 }
 
 // --------------------------------------------------------------- Sonne
@@ -1076,6 +1094,8 @@ static void init(void) {
   s_digit_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_104));
   s_date_fonts[0] = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_28));
   s_date_fonts[1] = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_22));
+  s_date_fonts[2] = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_16));
+  s_date_fonts[3] = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_12));
   s_ref_w = graphics_text_layout_get_content_size(
       "00", s_digit_font, GRect(0, 0, FB_MAX_W, FB_MAX_H),
       GTextOverflowModeWordWrap, GTextAlignmentLeft).w;

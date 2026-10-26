@@ -28,7 +28,7 @@ The original README follows.
 
 <img src="screenshots/shot_emery_mono.png" alt="shot_emery_mono.png"> <img src="screenshots/shot_emery_amber.png" alt="shot_emery_amber.png"> <img src="screenshots/shot_emery_mint.png" alt="shot_emery_mint.png"> <img src="screenshots/shot_gabbro_mono.png" alt="shot_gabbro_mono.png"> <img src="screenshots/shot_gabbro_teal.png" alt="shot_gabbro_teal.png"> <img src="screenshots/shot_gabbro_orange.png" alt="shot_gabbro_orange.png">
 
-A Pebble watchface (v1.4.2).
+A Pebble watchface (v1.4.3).
 
 Every watch assumes you can turn your arm until the face lies straight in
 front of you. Not everyone can. Lean turns the time instead of your arm:
@@ -100,6 +100,17 @@ pebble install --emulator emery
 The repository can also be imported into CloudPebble as is.
 
 ## Release notes
+
+### 1.4.3
+
+The date no longer disappears when the time is set large (e.g. font
+size 114 %): if the weekday/day pair fits nowhere at the two large
+date sizes, it now steps down through two smaller ones (16 and 12)
+until it fits — smaller, but present and together.
+
+Also: when Quiet Time is active, a small filled triangle sits in
+the top-right corner of the screen, so the state is visible at a
+glance.
 
 ### 1.4.2
 

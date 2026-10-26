@@ -52,6 +52,18 @@
           "file": "fonts/leco1976-pebble.otf",
           "name": "FONT_LECO_22",
           "type": "font"
+        },
+        {
+          "characterRegex": "[0-9A-Z\\u00c1]",
+          "file": "fonts/leco1976-pebble.otf",
+          "name": "FONT_LECO_16",
+          "type": "font"
+        },
+        {
+          "characterRegex": "[0-9A-Z\\u00c1]",
+          "file": "fonts/leco1976-pebble.otf",
+          "name": "FONT_LECO_12",
+          "type": "font"
         }
       ]
     },
@@ -65,5 +77,5 @@
       "watchface": true
     }
   },
-  "version": "1.4.2"
+  "version": "1.4.3"
 }

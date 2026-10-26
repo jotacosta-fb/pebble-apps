@@ -96,8 +96,10 @@ static void draw_battery_bg(GContext *ctx, GRect b) {
     int fill_w = inner_w * s_pct / 100;
     if (fill_w < 2) fill_w = 2;
 #ifdef PBL_COLOR
-    // Red alert when less than a day is left (charging stays green).
-    bool low = !s_charging && s_days_x10 >= 0 && s_days_x10 < 10;
+    // Red alert when less than a day is left (charging stays
+    // green; only a learned rate can claim this — v2.8.3).
+    bool low = !s_charging && s_rate_x10 > 0 && s_days_x10 >= 0 &&
+               s_days_x10 < 10;
     // Lighter fills (user): pale greens behind the digits; the
     // low-battery red stays saturated so the alert still pops.
     // At night the fills go darker (user's night mode) so the
@@ -130,8 +132,12 @@ static GFont pct_font_for(GFont df) {
 
 // The main readout (v2.5.0, user: simplify): no % — the big
 // number IS the days left, with the battery fill behind it. The
-// % survives only while charging (days can't be predicted then)
-// and in the footer on the last day (see days_update_proc).
+// % survives while charging (days can't be predicted then), in
+// the footer on the last day (see days_update_proc), and as the
+// main readout until a drain rate has actually been learned
+// (v2.8.3, user: show % before the prediction can be trusted —
+// a days number derived from the default rate is a guess
+// dressed as a measurement).
 static void draw_days_big(GContext *ctx, GRect b) {
   bool big = b.size.w >= 180;
   int box_y = b.size.h / 2 - (big ? 44 : 31);
@@ -215,10 +221,12 @@ static void pct_update_proc(Layer *layer, GContext *ctx) {
                        GTextAlignmentCenter, NULL);
     return;
   }
-  if (!s_charging) {
+  if (!s_charging && s_rate_x10 > 0) {
     draw_days_big(ctx, b);
     return;
   }
+  // Otherwise the % view: while charging, or until a rate is
+  // learned (v2.8.3).
 
   // Digit box placed so the digits' visual center is the screen's
   // vertical center (this layer is full-screen now).
@@ -337,7 +345,8 @@ static void days_update_proc(Layer *layer, GContext *ctx) {
     return;
   }
 
-  if (s_days_x10 >= 0 && s_days_x10 <= 10 && s_pct >= 0) {
+  if (s_rate_x10 > 0 && s_days_x10 >= 0 && s_days_x10 <= 10 &&
+      s_pct >= 0) {
     char pct_buf[8];
     snprintf(pct_buf, sizeof(pct_buf), "%d%%", s_pct);
     graphics_context_set_text_color(ctx, family_ink_color());
