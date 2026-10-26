@@ -267,12 +267,76 @@ static void pick_temps_font(bool big, const char *min_buf,
 #define LEAN_TEMPS_DEG 5.0
 static uint8_t s_lean_mask[(264 * 264 + 7) / 8];
 
+// Fetch-indicator state (the animation itself lives further
+// down; tentative declarations so lean_pass and the temps draw
+// can read them).
+static bool s_fetching;
+static int s_fetch_phase;
+static int s_fetch_ticks;
+static AppTimer *s_fetch_timer;
+
 // v2.1.2: rewritten in integer fixed point — no floating point
 // anywhere (v2.1.0's double-precision pass ran in the emulator
 // but crashed on hardware; the bisect build proved the fault
 // was inside this function). Same shape as Lean's own renderer:
 // 16.16 fixed-point steps, sin_lookup/cos_lookup for the angle,
 // 2x2 supersampling, blend LUT between background and ink.
+// Fetch glitch (user, v2.7.12): while a fetch is outstanding, the
+// temps' captured ink is broken down before the lean write-back —
+// horizontal slices of the digits are flipped down, inverted, or
+// shifted sideways, a different arrangement per animation phase,
+// with every fourth phase clean. Sort of numbers, wrong in
+// pieces: the old digits deconstruct while the new ones load.
+enum { G_NONE = 0, G_FLIP = 1, G_XOR = 2, G_RIGHT = 3, G_LEFT = 4 };
+static const int8_t GLITCH_OPS[3][4] = {
+  {G_NONE,  G_FLIP, G_RIGHT, G_NONE},
+  {G_XOR,   G_NONE, G_NONE,  G_FLIP},
+  {G_NONE,  G_LEFT, G_XOR,   G_FLIP},
+};
+static int lean_bit(int i) {
+  return (s_lean_mask[i >> 3] >> (i & 7)) & 1;
+}
+static void lean_set(int i, int v) {
+  if (v) s_lean_mask[i >> 3] |= (uint8_t)(1 << (i & 7));
+  else s_lean_mask[i >> 3] &= (uint8_t)~(1 << (i & 7));
+}
+static void glitch_mask(int W, int ix0, int iy0, int ix1, int iy1,
+                        int phase) {
+  if (phase < 0 || phase > 2) return;  // phase 3: clean beat
+  int ih = iy1 - iy0 + 1;
+  for (int sl = 0; sl < 4; sl++) {
+    int op = GLITCH_OPS[phase][sl];
+    if (op == G_NONE) continue;
+    int sy0 = iy0 + ih * sl / 4;
+    int sy1 = iy0 + ih * (sl + 1) / 4;
+    if (op == G_FLIP) {
+      for (int x = ix0; x <= ix1; x++)
+        for (int k = 0; k < (sy1 - sy0) / 2; k++) {
+          int a = (sy0 + k) * W + x, b = (sy1 - 1 - k) * W + x;
+          int t = lean_bit(a);
+          lean_set(a, lean_bit(b));
+          lean_set(b, t);
+        }
+    } else if (op == G_XOR) {
+      for (int y = sy0; y < sy1; y++)
+        for (int x = ix0; x <= ix1; x++)
+          lean_set(y * W + x, !lean_bit(y * W + x));
+    } else {
+      int dx = (op == G_RIGHT) ? 6 : -8;
+      for (int y = sy0; y < sy1; y++) {
+        uint8_t rowbits[264];
+        int n = ix1 - ix0 + 1;
+        for (int x = 0; x < n; x++) rowbits[x] = (uint8_t)lean_bit(y * W + ix0 + x);
+        for (int x = 0; x < n; x++) {
+          int src = x - dx;
+          lean_set(y * W + ix0 + x,
+                   (src >= 0 && src < n) ? rowbits[src] : 0);
+        }
+      }
+    }
+  }
+}
+
 static void lean_pass(Layer *layer, GContext *ctx) {
 #if defined(PBL_COLOR)
   GRect fr = layer_get_frame(layer);
@@ -308,6 +372,7 @@ static void lean_pass(Layer *layer, GContext *ctx) {
     graphics_release_frame_buffer(ctx, fb);
     return;
   }
+  if (s_fetching) glitch_mask(W, ix0, iy0, ix1, iy1, s_fetch_phase);
   // Ink center and sweep radius, all integers.
   int cx16 = (ix0 + ix1) << 15;  // center * 65536
   int cy16 = (iy0 + iy1) << 15;
@@ -353,13 +418,6 @@ static void lean_pass(Layer *layer, GContext *ctx) {
 #endif
 }
 
-// Fetch-indicator state (defined with the animation below;
-// tentative declarations so the temps draw can read them).
-static bool s_fetching;
-static int s_fetch_phase;
-static int s_fetch_ticks;
-static AppTimer *s_fetch_timer;
-
 static void temps_update_proc(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
   bool big = b.size.w >= 180;
@@ -374,29 +432,6 @@ static void temps_update_proc(Layer *layer, GContext *ctx) {
   // LECO 1976 custom font (from the Lean watchface).
   graphics_context_set_text_color(ctx, family_ink_color());
   graphics_context_set_fill_color(ctx, family_ink_color());
-
-  if (s_fetching) {
-    // "— . —" in place of the numbers (user, v2.7.11), at the
-    // temps' own scale, centred in the band; lean_pass below
-    // tilts it with everything else. Phase 3 is the blank beat.
-    if (s_fetch_phase < 3) {
-      int dw = big ? 34 : 24;   // dash width
-      int dh = big ? 8 : 6;     // dash/dot height (dot is square)
-      int gap = big ? 10 : 7;
-      int total = dw * 2 + gap * 2 + dh;
-      int x0 = (b.size.w - total) / 2;
-      int y0 = (b.size.h - dh) / 2;
-      graphics_fill_rect(ctx, GRect(x0, y0, dw, dh), 0, GCornerNone);
-      if (s_fetch_phase >= 1)
-        graphics_fill_rect(ctx, GRect(x0 + dw + gap, y0, dh, dh), 0,
-                           GCornerNone);
-      if (s_fetch_phase >= 2)
-        graphics_fill_rect(ctx, GRect(x0 + dw + gap + dh + gap, y0,
-                                      dw, dh), 0, GCornerNone);
-    }
-    lean_pass(layer, ctx);
-    return;
-  }
 
   if (!s_have_data) {
     graphics_draw_text(ctx, "-----\xC2\xB0", big ? s_f64 : s_f46, b,
@@ -675,14 +710,13 @@ static void window_appear(Window *window) {
 // Quiet Time earmarks (user, v2.7.6): a transparent full-screen
 // layer above everything else; the shared family helper draws
 // the four concave corner fillets while Quiet Time is active.
-// Fetch indicator (user, v2.7.10; moved v2.7.11): while a fetch
-// is outstanding, the TEMPS THEMSELVES show a dash, a dot and a
-// dash appearing one after another — "— . —" — in place of the
-// numbers (drawn in the temps layer, so they lean with them),
-// until the new data lands and the numbers update. If the phone
-// never replies, a ~10 s failsafe restores the previous numbers
-// — never stuck on the indicator. An outbox failure stops it
-// immediately.
+// Fetch indicator (user, v2.7.10; in the temps v2.7.11; glitch
+// viz v2.7.12): while a fetch is outstanding, the temps' digits
+// are shown broken down — slices flipped down, inverted, shifted
+// (see glitch_mask) — cycling arrangements until the new data
+// lands and the numbers update whole. If the phone never
+// replies, a ~10 s failsafe restores the previous numbers —
+// never stuck. An outbox failure stops it immediately.
 // (state declared above temps_update_proc)
 
 static void fetch_anim_stop(void) {
