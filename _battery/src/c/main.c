@@ -380,9 +380,16 @@ static void wobble_hook(int offset) {
   if (s_pct_layer) layer_mark_dirty(s_pct_layer);
 }
 
+static void request_night(void);  // defined with the AppMessage code below
+
 static void window_appear(Window *window) {
   family_wobble_start(wobble_hook);
   family_idle_arm();
+  // Ask the phone for fresh sunrise/sunset on every appear,
+  // not just at init (v2.8.1 — the same stale-epochs hole
+  // _weather had: a missed reply left yesterday's sun times
+  // deciding day/night).
+  request_night();
 }
 
 static void window_load(Window *window) {

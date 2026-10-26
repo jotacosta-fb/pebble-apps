@@ -613,6 +613,14 @@ static void wobble_hook(int offset) {
 static void window_appear(Window *window) {
   family_wobble_start(wobble_hook);
   family_idle_arm();
+  // Ask the phone for fresh data every time the app comes to
+  // the front (v2.7.5). Until now a refresh only happened on
+  // Select or when the phone's JS context restarted, so one
+  // silently failed fetch (a location timeout) left
+  // yesterday's sunrise/sunset in charge — and since the tick
+  // can only re-evaluate the epochs it has, the watch sat in
+  // night mode all morning.
+  request_update();
 }
 
 static void window_load(Window *window) {
