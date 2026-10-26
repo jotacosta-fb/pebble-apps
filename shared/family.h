@@ -73,6 +73,36 @@ FAMILY_API static uint8_t family_blend(uint8_t fg, uint8_t bg, int cov) {
   return out;
 }
 
+// ---------- Quiet Time earmarks ----------
+// When Quiet Time is active, draw a concave fillet in all four
+// screen corners (each corner box minus a disc of radius leg
+// centred one leg inside its corner): full width along both
+// edges, thinning along a circular arc toward the diagonal, so
+// the mark hugs the corner. One shared implementation for the
+// whole family (user, 2026-10-26) — each app calls it at the end
+// of its topmost full-screen draw, in screen space, with its
+// own ink color.
+#define FAMILY_QT_EARMARK_LEG 24
+FAMILY_API static void family_qt_earmarks(GContext *ctx, GRect bounds,
+                                          GColor ink) {
+  if (!quiet_time_is_active()) return;
+  const int leg = FAMILY_QT_EARMARK_LEG;
+  int w = bounds.size.w, h = bounds.size.h;
+  graphics_context_set_fill_color(ctx, ink);
+  for (int y = 0; y < leg; y++) {
+    int dy = leg - y;
+    int dx = family_isqrt(leg * leg - dy * dy);
+    int width = leg - dx;
+    graphics_fill_rect(ctx, GRect(0, y, width, 1), 0, GCornerNone);
+    graphics_fill_rect(ctx, GRect(w - leg + dx, y, width, 1), 0,
+                       GCornerNone);
+    graphics_fill_rect(ctx, GRect(0, h - 1 - y, width, 1), 0,
+                       GCornerNone);
+    graphics_fill_rect(ctx, GRect(w - leg + dx, h - 1 - y, width, 1),
+                       0, GCornerNone);
+  }
+}
+
 // ---------- Appear wobble ----------
 // The family motion (user-approved on _watchface, then brought
 // to every app): one full sine swing with a linear decay. The

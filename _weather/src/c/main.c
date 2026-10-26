@@ -53,6 +53,7 @@ static int font_height_of(GFont f) {
 static Layer *s_temps_layer;
 static Layer *s_header_layer;
 static Layer *s_icon_layer;
+static Layer *s_qt_layer;
 
 // Weather state
 static int s_temp_max = 0;
@@ -549,6 +550,7 @@ static void refresh_display(void) {
   layer_mark_dirty(s_header_layer);
   layer_mark_dirty(s_temps_layer);
   layer_mark_dirty(s_icon_layer);
+  if (s_qt_layer) layer_mark_dirty(s_qt_layer);
 }
 
 // ---------- AppMessage ----------
@@ -623,6 +625,13 @@ static void window_appear(Window *window) {
   request_update();
 }
 
+// Quiet Time earmarks (user, v2.7.6): a transparent full-screen
+// layer above everything else; the shared family helper draws
+// the four concave corner fillets while Quiet Time is active.
+static void qt_update_proc(Layer *layer, GContext *ctx) {
+  family_qt_earmarks(ctx, layer_get_bounds(layer), family_ink_color());
+}
+
 static void window_load(Window *window) {
   Layer *root = window_get_root_layer(window);
   GRect b = layer_get_bounds(root);
@@ -662,6 +671,12 @@ static void window_load(Window *window) {
   layer_set_update_proc(s_header_layer, header_update_proc);
   layer_add_child(root, s_header_layer);
 
+  // Quiet Time layer LAST (topmost, full screen, draws only the
+  // corner earmarks — transparent otherwise).
+  s_qt_layer = layer_create(b);
+  layer_set_update_proc(s_qt_layer, qt_update_proc);
+  layer_add_child(root, s_qt_layer);
+
   refresh_display();
 }
 
@@ -669,6 +684,7 @@ static void window_unload(Window *window) {
   layer_destroy(s_temps_layer);
   layer_destroy(s_header_layer);
   layer_destroy(s_icon_layer);
+  layer_destroy(s_qt_layer);
 }
 
 static void init(void) {

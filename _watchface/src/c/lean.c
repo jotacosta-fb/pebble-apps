@@ -580,6 +580,13 @@ static void render_rotated(GBitmap *fb, const Frame *f, bool with_date) {
 
   uint8_t lut[5];
   for (int cov = 0; cov <= 4; cov++) lut[cov] = family_blend(s_color_fg.argb, bg, cov);
+  // Das Datum wird unter aktiver Ruhezeit grau statt in der
+  // Ziffernfarbe geschrieben (user, v1.4.7) — eigene LUT, weil
+  // Zeit- und Datumsink unten getrennt gezaehlt werden.
+  uint8_t dlut[5];
+  uint8_t date_ink = quiet_time_is_active() ? GColorDarkGray.argb
+                                            : s_color_fg.argb;
+  for (int cov = 0; cov <= 4; cov++) dlut[cov] = family_blend(date_ink, bg, cov);
 
   // Ohne Datum genuegt der Kreis, den der gedrehte Zeitblock ueberstreichen
   // kann; mit Datum wird das ganze Display abgefahren.
@@ -601,16 +608,18 @@ static void render_rotated(GBitmap *fb, const Frame *f, bool with_date) {
 
     for (int x = x0; x <= x1; x++) {
       int cov = 0;
+      int dcov = 0;
       for (int i = 0; i < 4; i++) {
         int px = (sx + off_x[i]) >> 16;
         int py = (sy + off_y[i]) >> 16;
         int ox = (s_fly_off_l | s_fly_off_r)
                      ? ((py < f->src_cy) ? s_fly_off_l : s_fly_off_r) : 0;
-        int hit = bit_get(s_mask, px + ox, py, w, h);
-        if (!hit && with_date) hit = date_get(px - f->src_cx, py - f->src_cy, w, h);
-        cov += hit;
+        if (bit_get(s_mask, px + ox, py, w, h)) cov++;
+        else if (with_date &&
+                 date_get(px - f->src_cx, py - f->src_cy, w, h)) dcov++;
       }
       if (cov) row.data[x] = lut[cov];
+      else if (dcov) row.data[x] = dlut[dcov];
       sx += ux;
       sy += uy;
     }
@@ -728,34 +737,9 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   render_rotated(fb, &f, with_date);
   graphics_release_frame_buffer(ctx, fb);
 
-  // 4. Quiet-Time-Marke (user, v1.4.3; groesser und neu gerastert
-  // v1.4.4): ist die Ruhezeit aktiv, sitzt ein gefuelltes Dreieck
-  // in der oberen rechten Bildschirmecke — in Bildschirm-
-  // koordinaten (nicht mitgedreht), in der Ziffernfarbe, zuletzt
-  // gezeichnet. Zeile fuer Zeile gefuellt statt als GPath: der
-  // Pfad liess die letzte Pixelspalte am rechten Rand aus (user
-  // fiel es auf); so endet jede Zeile exakt an der letzten Spalte.
-  if (quiet_time_is_active()) {
-    // Curved (user, v1.4.5; curvature flipped v1.4.6): each
-    // earmark is the corner box minus a disc of radius leg
-    // centred one leg inside the corner — a concave fillet
-    // that hugs both edges at full width and thins along a
-    // circular arc toward the corner diagonal. (v1.4.5's
-    // quarter disc around the corner itself curved the other
-    // way; the user wanted this one.) Top-right and
-    // bottom-left; the edge columns stay inked every row.
-    const int leg = 24;
-    int w = bounds.size.w, h = bounds.size.h;
-    graphics_context_set_fill_color(ctx, s_color_fg);
-    for (int y = 0; y < leg; y++) {
-      int dy = leg - y;
-      int dx = family_isqrt(leg * leg - dy * dy);
-      graphics_fill_rect(ctx, GRect(w - leg + dx, y, leg - dx, 1), 0,
-                         GCornerNone);
-      graphics_fill_rect(ctx, GRect(0, h - 1 - y, leg - dx, 1), 0,
-                         GCornerNone);
-    }
-  }
+  // 4. Quiet-Time-Marken (user): konkave Ecken in allen vier
+  // BildschirmeEcken — geteilte Implementierung in family.h.
+  family_qt_earmarks(ctx, bounds, s_color_fg);
 }
 
 // --------------------------------------------------------------- Sonne
