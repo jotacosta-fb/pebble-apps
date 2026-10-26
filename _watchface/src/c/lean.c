@@ -712,14 +712,6 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   draw_row(ctx, bounds, cy + HOUR_TOP, s_hour_text);
   draw_row(ctx, bounds, cy + MIN_TOP, s_min_text);
 
-  // Ruhezeit-Punkt (user, v1.4.8): bei aktiver Ruhezeit ein
-  // Punkt auf der Naht zwischen Stunden- und Minutenzeile.
-  // Vor dem Einlesen gezeichnet, also Teil der Zeitmaske —
-  // er kippt und wackelt mit dem Block.
-  if (quiet_time_is_active()) {
-    graphics_context_set_fill_color(ctx, s_color_fg);
-    graphics_fill_circle(ctx, GPoint(bounds.size.w / 2, cy - 2), 6);
-  }
 
   GBitmap *fb = graphics_capture_frame_buffer(ctx);
   if (!fb) return;
@@ -749,6 +741,18 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   // 4. Quiet-Time-Marken (user): konkave Ecken in allen vier
   // BildschirmeEcken — geteilte Implementierung in family.h.
   family_qt_earmarks(ctx, bounds, s_color_fg);
+
+  // Dazu (v1.4.9) statt des Punkts aus v1.4.8 — der gefiel dem
+  // user nicht — eine duenne, zentrierte Linie am unteren
+  // Bildschirmrand, in halber Ink-Staerke: sehr dezent.
+  if (quiet_time_is_active()) {
+    GColor half = (GColor){.argb = family_blend(s_color_fg.argb,
+                                                s_color_bg.argb, 2)};
+    graphics_context_set_fill_color(ctx, half);
+    graphics_fill_rect(ctx, GRect((bounds.size.w - 40) / 2,
+                                  bounds.size.h - 10, 40, 2),
+                       0, GCornerNone);
+  }
 }
 
 // --------------------------------------------------------------- Sonne

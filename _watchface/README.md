@@ -28,7 +28,7 @@ The original README follows.
 
 <img src="screenshots/shot_emery_mono.png" alt="shot_emery_mono.png"> <img src="screenshots/shot_emery_amber.png" alt="shot_emery_amber.png"> <img src="screenshots/shot_emery_mint.png" alt="shot_emery_mint.png"> <img src="screenshots/shot_gabbro_mono.png" alt="shot_gabbro_mono.png"> <img src="screenshots/shot_gabbro_teal.png" alt="shot_gabbro_teal.png"> <img src="screenshots/shot_gabbro_orange.png" alt="shot_gabbro_orange.png">
 
-A Pebble watchface (v1.4.8).
+A Pebble watchface (v1.4.9).
 
 Every watch assumes you can turn your arm until the face lies straight in
 front of you. Not everyone can. Lean turns the time instead of your arm:
@@ -100,6 +100,14 @@ pebble install --emulator emery
 The repository can also be imported into CloudPebble as is.
 
 ## Release notes
+
+### 1.4.9
+
+The Quiet Time dot between the digit rows is gone (the user
+didn't like it). In its place, Quiet Time draws a thin line at
+the bottom center of the screen — 40 px wide, 2 px tall, at
+half ink strength — deliberately very subtle.
+
 
 ### 1.4.8
 
