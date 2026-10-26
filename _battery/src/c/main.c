@@ -17,9 +17,12 @@
 // stretch (charge % and time when the charger came off, or
 // the first sample) plus the lowest % seen since, and
 // computes the rate over the whole stretch — but only once
-// the stretch is at least 12 hours old and at least 3% deep,
-// so it rests on real signal. Within a stretch the window
-// only grows, so estimates converge instead of drifting. If
+// the stretch is at least 48 hours old and at least 3% deep:
+// a shorter first window is dominated by overnight sipping
+// and under-reads the true drain (the 12 h gate in 2.8.0 let
+// one quiet night write a ~4%/day rate — 22 days shown at
+// full charge). Within a stretch the window only grows, so
+// estimates converge instead of drifting. If
 // the charge ever rises 4% or more off its low without the
 // app seeing a charger, a charge happened in between: that
 // stretch is discarded and re-anchored rather than averaged
@@ -48,7 +51,7 @@ static int s_days_x10 = -1;    // predicted days left x10
 #define PERSIST_LAST_PCT 2    // now the stretch ANCHOR % (see header)
 #define PERSIST_LAST_TIME 3   // now the stretch ANCHOR time
 #define PERSIST_LOW_PCT 7     // lowest % seen in the current stretch
-#define PERSIST_SCHEMA 8      // learning-schema version (1 = v2.8.0)
+#define PERSIST_SCHEMA 8      // learning-schema version (2 = v2.8.2)
 #define PERSIST_NIGHT 4
 #define PERSIST_SUNRISE 5
 #define PERSIST_SUNSET 6
@@ -262,15 +265,16 @@ static void sample_battery(void) {
   s_pct = bs.charge_percent;
   s_charging = bs.is_charging || bs.is_plugged;
 
-  // One-time reset (v2.8.0): rates learned by the old per-step
-  // method are poisoned (see header) — relearn from scratch.
+  // One-time resets: v2.8.0 wiped rates learned by the old
+  // per-step method; v2.8.2 wipes rates learned under the
+  // too-trusting 12 h gate (see header) — relearn from scratch.
   if (!persist_exists(PERSIST_SCHEMA) ||
-      persist_read_int(PERSIST_SCHEMA) != 1) {
+      persist_read_int(PERSIST_SCHEMA) != 2) {
     persist_delete(PERSIST_RATE_X10);
     persist_delete(PERSIST_LAST_PCT);
     persist_delete(PERSIST_LAST_TIME);
     persist_delete(PERSIST_LOW_PCT);
-    persist_write_int(PERSIST_SCHEMA, 1);
+    persist_write_int(PERSIST_SCHEMA, 2);
   }
 
   int rate_x10 = persist_exists(PERSIST_RATE_X10)
@@ -299,7 +303,7 @@ static void sample_battery(void) {
     if (s_pct < low_pct) low_pct = s_pct;
     int drop = anchor_pct - s_pct;
     int elapsed = now - anchor_time;
-    if (drop >= 3 && elapsed >= 43200) {
+    if (drop >= 3 && elapsed >= 172800) {  // 48 h: two full day/night cycles
       int observed_x10 = (int)((long)drop * 864000 / elapsed);
       if (observed_x10 >= 10 && observed_x10 <= 1000) {
         rate_x10 = observed_x10;
