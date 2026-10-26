@@ -562,6 +562,9 @@ static void refresh_display(void) {
 // force=true and always fetches. A clock that moved backwards
 // counts as stale (age < 0 fetches).
 #define FETCH_FRESH_S (30 * 60)
+static void fetch_anim_start(void);
+static void fetch_anim_stop(void);
+
 static void request_update_forced(bool force) {
   if (!force && s_have_data && persist_exists(PERSIST_FETCH_AT)) {
     int age = (int)time(NULL) - persist_read_int(PERSIST_FETCH_AT);
@@ -572,6 +575,7 @@ static void request_update_forced(bool force) {
   if (iter) {
     dict_write_uint8(iter, MESSAGE_KEY_REQUEST, 1);
     app_message_outbox_send();
+    fetch_anim_start();
   }
 }
 
@@ -591,6 +595,7 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
     s_code = t_code->value->int32;
     s_have_data = true;
 
+    fetch_anim_stop();
     persist_write_int(PERSIST_FETCH_AT, (int)time(NULL));
     persist_write_int(PERSIST_TEMP_MAX, s_temp_max);
     persist_write_int(PERSIST_TEMP_MIN, s_temp_min);
@@ -640,8 +645,58 @@ static void window_appear(Window *window) {
 // Quiet Time earmarks (user, v2.7.6): a transparent full-screen
 // layer above everything else; the shared family helper draws
 // the four concave corner fillets while Quiet Time is active.
+// Fetch indicator (user, v2.7.10): while a fetch is outstanding,
+// a dash, a dot and a dash appear one after another at the top
+// centre — "— . —" — blinking in sequence until the new data
+// lands (or a ~10 s failsafe stops it). Pure feedback: it says
+// "I heard you, I'm fetching".
+static bool s_fetching;
+static int s_fetch_phase;   // 0,1,2 = elements appear; 3 = blank
+static int s_fetch_ticks;
+static AppTimer *s_fetch_timer;
+
+static void fetch_anim_stop(void) {
+  s_fetching = false;
+  if (s_fetch_timer) {
+    app_timer_cancel(s_fetch_timer);
+    s_fetch_timer = NULL;
+  }
+  if (s_qt_layer) layer_mark_dirty(s_qt_layer);
+}
+
+static void fetch_anim_tick(void *data) {
+  s_fetch_timer = NULL;
+  if (!s_fetching) return;
+  if (++s_fetch_ticks > 36) {  // ~10 s failsafe
+    fetch_anim_stop();
+    return;
+  }
+  s_fetch_phase = (s_fetch_phase + 1) % 4;
+  if (s_qt_layer) layer_mark_dirty(s_qt_layer);
+  s_fetch_timer = app_timer_register(280, fetch_anim_tick, NULL);
+}
+
+static void fetch_anim_start(void) {
+  if (s_fetching) return;
+  s_fetching = true;
+  s_fetch_phase = 0;
+  s_fetch_ticks = 0;
+  if (s_qt_layer) layer_mark_dirty(s_qt_layer);
+  s_fetch_timer = app_timer_register(280, fetch_anim_tick, NULL);
+}
+
 static void qt_update_proc(Layer *layer, GContext *ctx) {
-  family_qt_earmarks(ctx, layer_get_bounds(layer), family_ink_color());
+  GRect b = layer_get_bounds(layer);
+  family_qt_earmarks(ctx, b, family_ink_color());
+  if (s_fetching && s_fetch_phase < 3) {
+    int x0 = (b.size.w - 37) / 2;
+    graphics_context_set_fill_color(ctx, family_ink_color());
+    graphics_fill_rect(ctx, GRect(x0, 5, 12, 3), 0, GCornerNone);
+    if (s_fetch_phase >= 1)
+      graphics_fill_rect(ctx, GRect(x0 + 17, 5, 3, 3), 0, GCornerNone);
+    if (s_fetch_phase >= 2)
+      graphics_fill_rect(ctx, GRect(x0 + 25, 5, 12, 3), 0, GCornerNone);
+  }
 }
 
 static void window_load(Window *window) {
@@ -693,6 +748,7 @@ static void window_load(Window *window) {
 }
 
 static void window_unload(Window *window) {
+  fetch_anim_stop();
   layer_destroy(s_temps_layer);
   layer_destroy(s_header_layer);
   layer_destroy(s_icon_layer);
