@@ -353,6 +353,13 @@ static void lean_pass(Layer *layer, GContext *ctx) {
 #endif
 }
 
+// Fetch-indicator state (defined with the animation below;
+// tentative declarations so the temps draw can read them).
+static bool s_fetching;
+static int s_fetch_phase;
+static int s_fetch_ticks;
+static AppTimer *s_fetch_timer;
+
 static void temps_update_proc(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
   bool big = b.size.w >= 180;
@@ -367,6 +374,29 @@ static void temps_update_proc(Layer *layer, GContext *ctx) {
   // LECO 1976 custom font (from the Lean watchface).
   graphics_context_set_text_color(ctx, family_ink_color());
   graphics_context_set_fill_color(ctx, family_ink_color());
+
+  if (s_fetching) {
+    // "— . —" in place of the numbers (user, v2.7.11), at the
+    // temps' own scale, centred in the band; lean_pass below
+    // tilts it with everything else. Phase 3 is the blank beat.
+    if (s_fetch_phase < 3) {
+      int dw = big ? 34 : 24;   // dash width
+      int dh = big ? 8 : 6;     // dash/dot height (dot is square)
+      int gap = big ? 10 : 7;
+      int total = dw * 2 + gap * 2 + dh;
+      int x0 = (b.size.w - total) / 2;
+      int y0 = (b.size.h - dh) / 2;
+      graphics_fill_rect(ctx, GRect(x0, y0, dw, dh), 0, GCornerNone);
+      if (s_fetch_phase >= 1)
+        graphics_fill_rect(ctx, GRect(x0 + dw + gap, y0, dh, dh), 0,
+                           GCornerNone);
+      if (s_fetch_phase >= 2)
+        graphics_fill_rect(ctx, GRect(x0 + dw + gap + dh + gap, y0,
+                                      dw, dh), 0, GCornerNone);
+    }
+    lean_pass(layer, ctx);
+    return;
+  }
 
   if (!s_have_data) {
     graphics_draw_text(ctx, "-----\xC2\xB0", big ? s_f64 : s_f46, b,
@@ -645,15 +675,15 @@ static void window_appear(Window *window) {
 // Quiet Time earmarks (user, v2.7.6): a transparent full-screen
 // layer above everything else; the shared family helper draws
 // the four concave corner fillets while Quiet Time is active.
-// Fetch indicator (user, v2.7.10): while a fetch is outstanding,
-// a dash, a dot and a dash appear one after another at the top
-// centre — "— . —" — blinking in sequence until the new data
-// lands (or a ~10 s failsafe stops it). Pure feedback: it says
-// "I heard you, I'm fetching".
-static bool s_fetching;
-static int s_fetch_phase;   // 0,1,2 = elements appear; 3 = blank
-static int s_fetch_ticks;
-static AppTimer *s_fetch_timer;
+// Fetch indicator (user, v2.7.10; moved v2.7.11): while a fetch
+// is outstanding, the TEMPS THEMSELVES show a dash, a dot and a
+// dash appearing one after another — "— . —" — in place of the
+// numbers (drawn in the temps layer, so they lean with them),
+// until the new data lands and the numbers update. If the phone
+// never replies, a ~10 s failsafe restores the previous numbers
+// — never stuck on the indicator. An outbox failure stops it
+// immediately.
+// (state declared above temps_update_proc)
 
 static void fetch_anim_stop(void) {
   s_fetching = false;
@@ -661,7 +691,7 @@ static void fetch_anim_stop(void) {
     app_timer_cancel(s_fetch_timer);
     s_fetch_timer = NULL;
   }
-  if (s_qt_layer) layer_mark_dirty(s_qt_layer);
+  if (s_temps_layer) layer_mark_dirty(s_temps_layer);
 }
 
 static void fetch_anim_tick(void *data) {
@@ -672,7 +702,7 @@ static void fetch_anim_tick(void *data) {
     return;
   }
   s_fetch_phase = (s_fetch_phase + 1) % 4;
-  if (s_qt_layer) layer_mark_dirty(s_qt_layer);
+  if (s_temps_layer) layer_mark_dirty(s_temps_layer);
   s_fetch_timer = app_timer_register(280, fetch_anim_tick, NULL);
 }
 
@@ -681,22 +711,12 @@ static void fetch_anim_start(void) {
   s_fetching = true;
   s_fetch_phase = 0;
   s_fetch_ticks = 0;
-  if (s_qt_layer) layer_mark_dirty(s_qt_layer);
+  if (s_temps_layer) layer_mark_dirty(s_temps_layer);
   s_fetch_timer = app_timer_register(280, fetch_anim_tick, NULL);
 }
 
 static void qt_update_proc(Layer *layer, GContext *ctx) {
-  GRect b = layer_get_bounds(layer);
-  family_qt_earmarks(ctx, b, family_ink_color());
-  if (s_fetching && s_fetch_phase < 3) {
-    int x0 = (b.size.w - 37) / 2;
-    graphics_context_set_fill_color(ctx, family_ink_color());
-    graphics_fill_rect(ctx, GRect(x0, 5, 12, 3), 0, GCornerNone);
-    if (s_fetch_phase >= 1)
-      graphics_fill_rect(ctx, GRect(x0 + 17, 5, 3, 3), 0, GCornerNone);
-    if (s_fetch_phase >= 2)
-      graphics_fill_rect(ctx, GRect(x0 + 25, 5, 12, 3), 0, GCornerNone);
-  }
+  family_qt_earmarks(ctx, layer_get_bounds(layer), family_ink_color());
 }
 
 static void window_load(Window *window) {
@@ -800,6 +820,8 @@ static void init(void) {
   tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
 
   app_message_register_inbox_received(inbox_received);
+  app_message_register_outbox_failed(
+      (AppMessageOutboxFailed)fetch_anim_stop);
   app_message_open(256, 64);
   request_update_forced(false);
 }
