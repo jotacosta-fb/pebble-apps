@@ -28,7 +28,7 @@ The original README follows.
 
 <img src="screenshots/shot_emery_mono.png" alt="shot_emery_mono.png"> <img src="screenshots/shot_emery_amber.png" alt="shot_emery_amber.png"> <img src="screenshots/shot_emery_mint.png" alt="shot_emery_mint.png"> <img src="screenshots/shot_gabbro_mono.png" alt="shot_gabbro_mono.png"> <img src="screenshots/shot_gabbro_teal.png" alt="shot_gabbro_teal.png"> <img src="screenshots/shot_gabbro_orange.png" alt="shot_gabbro_orange.png">
 
-A Pebble watchface (v1.4.1).
+A Pebble watchface (v1.4.2).
 
 Every watch assumes you can turn your arm until the face lies straight in
 front of you. Not everyone can. Lean turns the time instead of your arm:
@@ -100,6 +100,15 @@ pebble install --emulator emery
 The repository can also be imported into CloudPebble as is.
 
 ## Release notes
+
+### 1.4.2
+
+The date's weekday and day of the month now always stay together —
+side by side or stacked as one block. The old third arrangement,
+which placed each half in its own corner when that scored better,
+is gone; when the pair doesn't fit together at the large date
+size, the smaller date font is used instead.
+
 
 ### 1.4.0
 

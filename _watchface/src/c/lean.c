@@ -79,7 +79,6 @@
 #define DATE_LINE_GAP       6   // Wochentag ueber Tag
 // So viel mehr Luft (px) muss eine Trennung bringen, sonst bleibt das Datum
 // zusammen -- getrennt liest es sich schlechter.
-#define DATE_SPLIT_BONUS    6
 // Platzsuche: Rasterweite und Suchradius im Leseraum
 #define DATE_STEP           2
 #define DATE_RANGE        150
@@ -444,8 +443,12 @@ static int place_box(const Geo *g, int w, int h, Box *out) {
   return best.c;
 }
 
-// Ordnet Wochentag und Tag an: nebeneinander, uebereinander oder getrennt,
-// je nachdem, was den meisten Abstand zu Rand und Zeitblock laesst.
+// Ordnet Wochentag und Tag an: nebeneinander oder uebereinander, je
+// nachdem, was den meisten Abstand zu Rand und Zeitblock laesst. Sie
+// bleiben immer zusammen (user, v1.4.2): die fruehere dritte Anordnung
+// "getrennt" — jede Haelfte an ihrer eigenen besten Stelle — gibt es
+// nicht mehr; passt das Paar in der grossen Datumsschrift nirgends
+// zusammen, faellt prepare_date auf die kleinere Schrift zurueck.
 static void layout_date(Geo *g) {
   int ww = ink_w(&s_items[ITEM_WDAY].ink), hw = ink_h(&s_items[ITEM_WDAY].ink);
   int wd = ink_w(&s_items[ITEM_MDAY].ink), hd = ink_h(&s_items[ITEM_MDAY].ink);
@@ -470,24 +473,6 @@ static void layout_date(Geo *g) {
     s_items[ITEM_WDAY].y = b.y0;
     s_items[ITEM_MDAY].x = (b.x0 + b.x1 - wd) / 2;
     s_items[ITEM_MDAY].y = b.y1 - hd;
-  }
-
-  // Getrennt: erst der Wochentag an die beste Stelle, dann der Tag an die
-  // beste verbleibende
-  Box bw, bd;
-  int split = place_box(g, ww, hw, &bw);
-  if (split >= 0) {
-    g->obstacles[g->n_obstacles++] = bw;
-    int second = place_box(g, wd, hd, &bd);
-    g->n_obstacles--;
-    split = (second < 0) ? -1 : imin(split, second);
-  }
-  if (split >= 0 && (best < 0 || split > best + DATE_SPLIT_BONUS)) {
-    best = split;
-    s_items[ITEM_WDAY].x = bw.x0;
-    s_items[ITEM_WDAY].y = bw.y0;
-    s_items[ITEM_MDAY].x = bd.x0;
-    s_items[ITEM_MDAY].y = bd.y0;
   }
 
   s_date_placed = best >= 0;
