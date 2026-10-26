@@ -1,13 +1,14 @@
 // MinMax Weather — PebbleKit JS companion.
 // Fetches today's forecast from Open-Meteo (free, no API key) and sends
-// only what the watch shows: min/max temp, precipitation probability,
+// only what the watch shows: min/max temp — since v2.7.8 the FEELS-LIKE
+// (apparent) pair, not the raw temperature — precipitation probability,
 // and the current WMO weather code.
 
 function fetchFor(lat, lon) {
   var url = 'https://api.open-meteo.com/v1/forecast' +
     '?latitude=' + lat +
     '&longitude=' + lon +
-    '&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset' +
+    '&daily=apparent_temperature_max,apparent_temperature_min,precipitation_probability_max,sunrise,sunset' +
     '&timeformat=unixtime' +
     '&hourly=precipitation_probability' +
     '&current=weather_code' +
@@ -29,8 +30,8 @@ function fetchFor(lat, lon) {
       var now = Math.floor(Date.now() / 1000);
       var night = (now < j.daily.sunrise[0] || now >= j.daily.sunset[0]) ? 1 : 0;
       Pebble.sendAppMessage({
-        'TEMP_MAX': Math.round(j.daily.temperature_2m_max[0]),
-        'TEMP_MIN': Math.round(j.daily.temperature_2m_min[0]),
+        'TEMP_MAX': Math.round(j.daily.apparent_temperature_max[0]),
+        'TEMP_MIN': Math.round(j.daily.apparent_temperature_min[0]),
         'PRECIP': Math.round(precip),
         'CODE': j.current.weather_code,
         'NIGHT': night,
