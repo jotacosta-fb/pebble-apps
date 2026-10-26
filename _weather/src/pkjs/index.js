@@ -29,6 +29,7 @@ function fetchFor(lat, lon) {
       }
       var now = Math.floor(Date.now() / 1000);
       var night = (now < j.daily.sunrise[0] || now >= j.daily.sunset[0]) ? 1 : 0;
+      try { localStorage.setItem('lastFetchAt', String(Date.now())); } catch (e) {}
       Pebble.sendAppMessage({
         'TEMP_MAX': Math.round(j.daily.apparent_temperature_max[0]),
         'TEMP_MIN': Math.round(j.daily.apparent_temperature_min[0]),
@@ -52,6 +53,16 @@ function fetchFor(lat, lon) {
 }
 
 function fetchWeather() {
+  // Fetch throttle (v2.7.9, mirrors the watch side): a fetch
+  // younger than 30 minutes is reused — the watch is showing
+  // it already, so skip the location + network round trip.
+  try {
+    var last = parseInt(localStorage.getItem('lastFetchAt') || '0', 10);
+    if (last && Date.now() - last < 30 * 60 * 1000) {
+      console.log('Fetch skipped: last one is still fresh');
+      return;
+    }
+  } catch (e) {}
   navigator.geolocation.getCurrentPosition(
     function (pos) {
       // Remember the last good fix: a later location failure

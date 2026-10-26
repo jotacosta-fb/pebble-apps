@@ -69,6 +69,7 @@ static bool s_have_data = false;
 #define PERSIST_NIGHT 6
 #define PERSIST_SUNRISE 7
 #define PERSIST_SUNSET 8
+#define PERSIST_FETCH_AT 9  // epoch of the last successful fetch
 
 // Night mode is the family engine (shared/family.h): the JS
 // sends sunrise/sunset epochs with each fetch; the watch stores
@@ -555,7 +556,17 @@ static void refresh_display(void) {
 
 // ---------- AppMessage ----------
 
-static void request_update(void) {
+// Fetch throttle (user, v2.7.9): if the last successful fetch
+// is less than 30 minutes old, reuse it silently instead of
+// asking the phone again. Select (a deliberate refresh) passes
+// force=true and always fetches. A clock that moved backwards
+// counts as stale (age < 0 fetches).
+#define FETCH_FRESH_S (30 * 60)
+static void request_update_forced(bool force) {
+  if (!force && s_have_data && persist_exists(PERSIST_FETCH_AT)) {
+    int age = (int)time(NULL) - persist_read_int(PERSIST_FETCH_AT);
+    if (age >= 0 && age < FETCH_FRESH_S) return;
+  }
   DictionaryIterator *iter;
   app_message_outbox_begin(&iter);
   if (iter) {
@@ -580,6 +591,7 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
     s_code = t_code->value->int32;
     s_have_data = true;
 
+    persist_write_int(PERSIST_FETCH_AT, (int)time(NULL));
     persist_write_int(PERSIST_TEMP_MAX, s_temp_max);
     persist_write_int(PERSIST_TEMP_MIN, s_temp_min);
     persist_write_int(PERSIST_PRECIP, s_precip);
@@ -590,7 +602,7 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
 
 static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
   family_idle_arm();
-  request_update();
+  request_update_forced(true);
 }
 
 static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
@@ -622,7 +634,7 @@ static void window_appear(Window *window) {
   // yesterday's sunrise/sunset in charge — and since the tick
   // can only re-evaluate the epochs it has, the watch sat in
   // night mode all morning.
-  request_update();
+  request_update_forced(false);
 }
 
 // Quiet Time earmarks (user, v2.7.6): a transparent full-screen
@@ -733,7 +745,7 @@ static void init(void) {
 
   app_message_register_inbox_received(inbox_received);
   app_message_open(256, 64);
-  request_update();
+  request_update_forced(false);
 }
 
 static void deinit(void) {
