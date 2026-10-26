@@ -580,12 +580,12 @@ static void render_rotated(GBitmap *fb, const Frame *f, bool with_date) {
 
   uint8_t lut[5];
   for (int cov = 0; cov <= 4; cov++) lut[cov] = family_blend(s_color_fg.argb, bg, cov);
-  // Das Datum wird unter aktiver Ruhezeit grau statt in der
-  // Ziffernfarbe geschrieben (user, v1.4.7) — eigene LUT, weil
+  // Das Datum wird immer grau statt in der Ziffernfarbe
+  // geschrieben (user: das Grau der Ruhezeit gefiel ihm so gut,
+  // dass es v1.4.8 zum Dauerzustand wurde) — eigene LUT, weil
   // Zeit- und Datumsink unten getrennt gezaehlt werden.
   uint8_t dlut[5];
-  uint8_t date_ink = quiet_time_is_active() ? GColorDarkGray.argb
-                                            : s_color_fg.argb;
+  uint8_t date_ink = GColorDarkGray.argb;
   for (int cov = 0; cov <= 4; cov++) dlut[cov] = family_blend(date_ink, bg, cov);
 
   // Ohne Datum genuegt der Kreis, den der gedrehte Zeitblock ueberstreichen
@@ -711,6 +711,15 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   // 1. Zeit zeichnen und in die Maske lesen
   draw_row(ctx, bounds, cy + HOUR_TOP, s_hour_text);
   draw_row(ctx, bounds, cy + MIN_TOP, s_min_text);
+
+  // Ruhezeit-Punkt (user, v1.4.8): bei aktiver Ruhezeit ein
+  // Punkt auf der Naht zwischen Stunden- und Minutenzeile.
+  // Vor dem Einlesen gezeichnet, also Teil der Zeitmaske —
+  // er kippt und wackelt mit dem Block.
+  if (quiet_time_is_active()) {
+    graphics_context_set_fill_color(ctx, s_color_fg);
+    graphics_fill_circle(ctx, GPoint(bounds.size.w / 2, cy - 2), 6);
+  }
 
   GBitmap *fb = graphics_capture_frame_buffer(ctx);
   if (!fb) return;
