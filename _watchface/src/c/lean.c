@@ -744,13 +744,16 @@ static void canvas_update(Layer *layer, GContext *ctx) {
 
   // Dazu (v1.4.9) statt des Punkts aus v1.4.8 — der gefiel dem
   // user nicht — eine duenne, zentrierte Linie am unteren
-  // Bildschirmrand, in halber Ink-Staerke: sehr dezent.
+  // Bildschirmrand — oben und unten (user, v1.4.10) — in
+  // halber Ink-Staerke: sehr dezent.
   if (quiet_time_is_active()) {
     GColor half = (GColor){.argb = family_blend(s_color_fg.argb,
                                                 s_color_bg.argb, 2)};
     graphics_context_set_fill_color(ctx, half);
     graphics_fill_rect(ctx, GRect((bounds.size.w - 40) / 2,
                                   bounds.size.h - 10, 40, 2),
+                       0, GCornerNone);
+    graphics_fill_rect(ctx, GRect((bounds.size.w - 40) / 2, 8, 40, 2),
                        0, GCornerNone);
   }
 }
