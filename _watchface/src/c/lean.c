@@ -736,20 +736,23 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   // Pfad liess die letzte Pixelspalte am rechten Rand aus (user
   // fiel es auf); so endet jede Zeile exakt an der letzten Spalte.
   if (quiet_time_is_active()) {
-    // Curved (user, v1.4.5): each earmark is a quarter disc of
-    // radius leg around its corner — the straight hypotenuse
-    // became a circular arc, so the mark melts into the corner.
-    // Both corners now: top-right and bottom-left. Rows still
-    // end exactly at the edge columns.
+    // Curved (user, v1.4.5; curvature flipped v1.4.6): each
+    // earmark is the corner box minus a disc of radius leg
+    // centred one leg inside the corner — a concave fillet
+    // that hugs both edges at full width and thins along a
+    // circular arc toward the corner diagonal. (v1.4.5's
+    // quarter disc around the corner itself curved the other
+    // way; the user wanted this one.) Top-right and
+    // bottom-left; the edge columns stay inked every row.
     const int leg = 24;
     int w = bounds.size.w, h = bounds.size.h;
     graphics_context_set_fill_color(ctx, s_color_fg);
     for (int y = 0; y < leg; y++) {
-      int half = family_isqrt(leg * leg - y * y);
-      if (half < 1) continue;
-      graphics_fill_rect(ctx, GRect(w - half, y, half, 1), 0,
+      int dy = leg - y;
+      int dx = family_isqrt(leg * leg - dy * dy);
+      graphics_fill_rect(ctx, GRect(w - leg + dx, y, leg - dx, 1), 0,
                          GCornerNone);
-      graphics_fill_rect(ctx, GRect(0, h - 1 - y, half, 1), 0,
+      graphics_fill_rect(ctx, GRect(0, h - 1 - y, leg - dx, 1), 0,
                          GCornerNone);
     }
   }
