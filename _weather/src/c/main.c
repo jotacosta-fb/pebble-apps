@@ -750,7 +750,8 @@ static void fetch_anim_start(void) {
 }
 
 static void qt_update_proc(Layer *layer, GContext *ctx) {
-  family_qt_earmarks(ctx, layer_get_bounds(layer), family_ink_color());
+  family_qt_earmarks(ctx, layer_get_bounds(layer), family_ink_color(),
+                     family_bg_color());
 }
 
 static void window_load(Window *window) {

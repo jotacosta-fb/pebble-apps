@@ -264,6 +264,11 @@ GFont font = big ? s_f68 : s_f48;
   graphics_draw_text(ctx, "%", pct_font,
                      GRect(x + d_sz.w + 4, pct_y, p_sz.w + 2, box_h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+  // Quiet Time earmarks (user, v2.8.4): the shared family marks,
+  // drawn last in this full-screen layer.
+  family_qt_earmarks(ctx, layer_get_bounds(layer), family_ink_color(),
+                     family_bg_color());
+
 }
 
 // ---------- Prediction ----------

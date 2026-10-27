@@ -234,9 +234,8 @@ FAMILY_API static int family_night_apply(DictionaryIterator *iter,
 }
 
 // ---------- Quiet Time earmarks ----------
-// When Quiet Time is active (and it is not night — at night the
-// marks come off, the face is all black anyway; user,
-// 2026-10-26), draw a concave fillet in all four screen corners
+// When Quiet Time is active and the background is light, draw
+// a concave fillet in all four screen corners
 // (each corner box minus a disc of radius leg centred one leg
 // inside its corner): full width along both edges, thinning
 // along a circular arc toward the diagonal, so the mark hugs
@@ -244,10 +243,20 @@ FAMILY_API static int family_night_apply(DictionaryIterator *iter,
 // each app calls it at the end of its topmost full-screen draw,
 // in screen space, with its own ink color.
 #define FAMILY_QT_EARMARK_LEG 24
-FAMILY_API static void family_qt_earmarks_ex(GContext *ctx,
-                                               GRect bounds,
-                                               GColor ink, bool night) {
-  if (!quiet_time_is_active() || night) return;
+// The marks draw only on a LIGHT background (user's rule,
+// 2026-10-27 — it replaces the earlier night-state gates: at
+// night the background is dark, so they vanish there too, and
+// a dark custom background in daytime behaves the same).
+// Lightness from the 2-bit channels of the Pebble argb color.
+FAMILY_API static bool family_color_is_light(GColor c) {
+  int r = (c.argb >> 4) & 3, g = (c.argb >> 2) & 3, b = c.argb & 3;
+  return 2 * r + 3 * g + b >= 9;
+}
+
+FAMILY_API static void family_qt_earmarks(GContext *ctx, GRect bounds,
+                                          GColor ink, GColor bg) {
+  if (!quiet_time_is_active()) return;
+  if (!family_color_is_light(bg)) return;
   const int leg = FAMILY_QT_EARMARK_LEG;
   int w = bounds.size.w, h = bounds.size.h;
   graphics_context_set_fill_color(ctx, ink);
@@ -263,16 +272,6 @@ FAMILY_API static void family_qt_earmarks_ex(GContext *ctx,
     graphics_fill_rect(ctx, GRect(w - leg + dx, h - 1 - y, width, 1),
                        0, GCornerNone);
   }
-}
-
-// Plain form: gates on the family night state. Apps whose night
-// lives elsewhere (the watchface computes its own) call the _ex
-// form with their own night flag instead — the plain gate read
-// an always-false family_night there and the marks showed at
-// night (user report, fixed v1.4.11 of the face).
-FAMILY_API static void family_qt_earmarks(GContext *ctx, GRect bounds,
-                                          GColor ink) {
-  family_qt_earmarks_ex(ctx, bounds, ink, family_night);
 }
 
 // ---------- Idle exit ----------
