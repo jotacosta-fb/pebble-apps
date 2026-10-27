@@ -242,12 +242,14 @@ FAMILY_API static int family_night_apply(DictionaryIterator *iter,
 // the corner. One shared implementation for the whole family —
 // each app calls it at the end of its topmost full-screen draw,
 // in screen space, with its own ink color.
-// 35 px: hand-tuned by the user (2026-10-27) against the real
-// watch. Reference points: the glass corner itself measures
-// R 8.5 mm (= 68 px at 202 DPI, from Core Devices' official
-// CAD solid model) and the display-concentric value is 44 px;
-// both read slightly large on the wrist, 35 px is the keeper.
-#define FAMILY_EARMARK_LEG 35
+// 29 px: the user's pick from a side-by-side comparison
+// (2026-10-27) of 19 / 24 (the original) / 25 / 29. Reference
+// points from the same session: the Pebble Time 2 glass
+// corner measures R 8.5 mm = 68 px at 202 DPI (Core Devices'
+// official CAD solid model); the display-concentric value is
+// 44 px; 68, 44 and 35 were each shipped and each read
+// slightly large on the wrist.
+#define FAMILY_EARMARK_LEG 29
 // The marks draw only on a LIGHT background (user's rule,
 // 2026-10-27 — it replaces the earlier night-state gates: at
 // night the background is dark, so they vanish there too, and
