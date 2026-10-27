@@ -740,7 +740,10 @@ static void canvas_update(Layer *layer, GContext *ctx) {
 
   // 4. Quiet-Time-Marken (user): konkave Ecken in allen vier
   // BildschirmeEcken — geteilte Implementierung in family.h.
-  family_qt_earmarks(ctx, bounds, s_color_fg);
+  // _ex-Form mit dem eigenen Nachtzustand (s_night_active) —
+  // family_night fuehrt das Face nicht, das alte Gate griff
+  // ins Leere und die Ecken zeigten sich nachts weiss (user).
+  family_qt_earmarks_ex(ctx, bounds, s_color_fg, s_night_active);
 
   // Dazu (v1.4.9) statt des Punkts aus v1.4.8 — der gefiel dem
   // user nicht — eine duenne, zentrierte Linie am unteren

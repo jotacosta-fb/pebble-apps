@@ -244,9 +244,10 @@ FAMILY_API static int family_night_apply(DictionaryIterator *iter,
 // each app calls it at the end of its topmost full-screen draw,
 // in screen space, with its own ink color.
 #define FAMILY_QT_EARMARK_LEG 24
-FAMILY_API static void family_qt_earmarks(GContext *ctx, GRect bounds,
-                                          GColor ink) {
-  if (!quiet_time_is_active() || family_night) return;
+FAMILY_API static void family_qt_earmarks_ex(GContext *ctx,
+                                               GRect bounds,
+                                               GColor ink, bool night) {
+  if (!quiet_time_is_active() || night) return;
   const int leg = FAMILY_QT_EARMARK_LEG;
   int w = bounds.size.w, h = bounds.size.h;
   graphics_context_set_fill_color(ctx, ink);
@@ -262,6 +263,16 @@ FAMILY_API static void family_qt_earmarks(GContext *ctx, GRect bounds,
     graphics_fill_rect(ctx, GRect(w - leg + dx, h - 1 - y, width, 1),
                        0, GCornerNone);
   }
+}
+
+// Plain form: gates on the family night state. Apps whose night
+// lives elsewhere (the watchface computes its own) call the _ex
+// form with their own night flag instead — the plain gate read
+// an always-false family_night there and the marks showed at
+// night (user report, fixed v1.4.11 of the face).
+FAMILY_API static void family_qt_earmarks(GContext *ctx, GRect bounds,
+                                          GColor ink) {
+  family_qt_earmarks_ex(ctx, bounds, ink, family_night);
 }
 
 // ---------- Idle exit ----------
