@@ -738,9 +738,9 @@ static void canvas_update(Layer *layer, GContext *ctx) {
   render_rotated(fb, &f, with_date);
   graphics_release_frame_buffer(ctx, fb);
 
-  // 4. Quiet-Time-Marken (user): konkave Ecken in allen vier
+  // 4. Ecken-Marken (user): konkave Ecken in allen vier
   // BildschirmeEcken — geteilte Implementierung in family.h.
-  family_qt_earmarks(ctx, bounds, s_color_fg, s_color_bg);
+  family_earmarks(ctx, bounds, s_color_fg, s_color_bg);
 
   // Dazu (v1.4.9) statt des Punkts aus v1.4.8 — der gefiel dem
   // user nicht — eine duenne, zentrierte Linie am unteren
