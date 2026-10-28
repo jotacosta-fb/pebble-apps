@@ -522,7 +522,7 @@ static void temps_update_proc(Layer *layer, GContext *ctx) {
 
 // ---------- Header: precip chance as icon + % ----------
 // The word (Rain/Snow/Precip) is gone: a small droplet or snowflake
-// icon sits beside the percentage. At 0% — or before the first
+// icon sits beside the percentage. Below 5% — or before the first
 // reading — the header draws nothing at all (user request).
 
 static void draw_droplet(GContext *ctx, int cx, int cy) {
@@ -550,7 +550,7 @@ static void draw_snowflake(GContext *ctx, int cx, int cy) {
 }
 
 static void header_update_proc(Layer *layer, GContext *ctx) {
-  if (!s_have_data || s_precip <= 0) return;  // no header at 0%
+  if (!s_have_data || s_precip < 5) return;  // no header below 5%
   GRect b = layer_get_bounds(layer);
   GFont font = fonts_get_system_font(FONT_KEY_GOTHIC_28);
 
