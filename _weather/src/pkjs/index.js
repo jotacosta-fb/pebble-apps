@@ -8,6 +8,38 @@
 // it read too low, so v2.7.13 reverts), precipitation probability,
 // and the current WMO weather code.
 
+// Remaining-hours precipitation (user, v2.7.23): the watch
+// shows the highest precipitation probability over the hours
+// still left today — current hour through 23:00 local — and
+// the hour it happens at. A past peak no longer counts: 90%
+// at 11am with 12% at noon and zeros after shows 12% . 12:00,
+// not 90%. Ties take the earliest hour. If the hourly series
+// is missing entirely, fall back to the whole-day max with
+// no hour attached.
+function precipRemaining(j, now) {
+  var times = (j.hourly && j.hourly.time) || [];
+  var probs = (j.hourly && j.hourly.precipitation_probability) || [];
+  var hourStart = Math.floor(now / 3600) * 3600;
+  var best = -1, bestHour = -1;
+  for (var i = 0; i < times.length && i < probs.length; i++) {
+    if (times[i] < hourStart) continue;
+    var p = probs[i];
+    if (p === null || p === undefined) continue;
+    if (p > best) {
+      best = p;
+      bestHour = new Date(times[i] * 1000).getHours();
+    }
+  }
+  if (best < 0) {
+    var d = j.daily && j.daily.precipitation_probability_max;
+    if (d && d[0] !== null && d[0] !== undefined) {
+      return { precip: d[0], hour: -1 };
+    }
+    return { precip: 0, hour: -1 };
+  }
+  return { precip: best, hour: bestHour };
+}
+
 function fetchFor(lat, lon) {
   var url = 'https://api.open-meteo.com/v1/forecast' +
     '?latitude=' + lat +
@@ -22,22 +54,16 @@ function fetchFor(lat, lon) {
   xhr.onload = function () {
     try {
       var j = JSON.parse(this.responseText);
-      var precip = j.daily.precipitation_probability_max[0];
-      if (precip === null || precip === undefined) {
-        // Fall back to the max hourly probability for today
-        precip = 0;
-        var hourly = j.hourly.precipitation_probability || [];
-        for (var i = 0; i < hourly.length && i < 24; i++) {
-          if (hourly[i] !== null && hourly[i] > precip) precip = hourly[i];
-        }
-      }
       var now = Math.floor(Date.now() / 1000);
+      var rem = precipRemaining(j, now);
+      var precip = rem.precip;
       var night = (now < j.daily.sunrise[0] || now >= j.daily.sunset[0]) ? 1 : 0;
       try { localStorage.setItem('lastFetchAt', String(Date.now())); } catch (e) {}
       Pebble.sendAppMessage({
         'TEMP_MAX': Math.round(j.daily.temperature_2m_max[0]),
         'TEMP_MIN': Math.round(j.daily.temperature_2m_min[0]),
         'PRECIP': Math.round(precip),
+        'PRECIP_HOUR': rem.hour,
         'CODE': j.current.weather_code,
         'NIGHT': night,
         'SUNRISE': j.daily.sunrise[0],

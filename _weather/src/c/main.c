@@ -59,6 +59,7 @@ static Layer *s_qt_layer;
 static int s_temp_max = 0;
 static int s_temp_min = 0;
 static int s_precip = -1;      // -1 = no data yet
+static int s_precip_hour = -1; // hour of the remaining max, -1 = unknown
 static int s_code = -1;        // WMO weather code, -1 = no data yet
 static bool s_have_data = false;
 
@@ -70,6 +71,7 @@ static bool s_have_data = false;
 #define PERSIST_SUNRISE 7
 #define PERSIST_SUNSET 8
 #define PERSIST_FETCH_AT 9  // epoch of the last successful fetch
+#define PERSIST_PRECIP_HOUR 10
 
 // Night mode is the family engine (shared/family.h): the JS
 // sends sunrise/sunset epochs with each fetch; the watch stores
@@ -551,11 +553,17 @@ static void draw_snowflake(GContext *ctx, int cx, int cy) {
 
 static void header_update_proc(Layer *layer, GContext *ctx) {
   if (!s_have_data || s_precip < 5) return;  // no header below 5%
+  // Remaining-hours max with its hour, dot-joined like the
+  // min/max pair: "37% . 20:00". No hour (old data) -> "%" only.
   GRect b = layer_get_bounds(layer);
   GFont font = fonts_get_system_font(FONT_KEY_GOTHIC_28);
 
-  char buf[8];
-  snprintf(buf, sizeof(buf), "%d%%", s_precip);
+  char buf[16];
+  if (s_precip_hour >= 0) {
+    snprintf(buf, sizeof(buf), "%d%% . %02d:00", s_precip, s_precip_hour);
+  } else {
+    snprintf(buf, sizeof(buf), "%d%%", s_precip);
+  }
   GSize t_sz = graphics_text_layout_get_content_size(
       buf, font, GRect(0, 0, 300, b.size.h), GTextOverflowModeFill,
       GTextAlignmentLeft);
@@ -652,6 +660,7 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
   Tuple *t_max = dict_find(iter, MESSAGE_KEY_TEMP_MAX);
   Tuple *t_min = dict_find(iter, MESSAGE_KEY_TEMP_MIN);
   Tuple *t_precip = dict_find(iter, MESSAGE_KEY_PRECIP);
+  Tuple *t_precip_hour = dict_find(iter, MESSAGE_KEY_PRECIP_HOUR);
   Tuple *t_code = dict_find(iter, MESSAGE_KEY_CODE);
   family_night_apply(iter, MESSAGE_KEY_SUNRISE, MESSAGE_KEY_SUNSET,
                        MESSAGE_KEY_NIGHT, PERSIST_SUNRISE, PERSIST_SUNSET,
@@ -661,6 +670,7 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
     s_temp_max = t_max->value->int32;
     s_temp_min = t_min->value->int32;
     s_precip = t_precip->value->int32;
+    if (t_precip_hour) s_precip_hour = t_precip_hour->value->int32;
     s_code = t_code->value->int32;
     s_have_data = true;
 
@@ -669,6 +679,7 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
     persist_write_int(PERSIST_TEMP_MAX, s_temp_max);
     persist_write_int(PERSIST_TEMP_MIN, s_temp_min);
     persist_write_int(PERSIST_PRECIP, s_precip);
+    persist_write_int(PERSIST_PRECIP_HOUR, s_precip_hour);
     persist_write_int(PERSIST_CODE, s_code);
     refresh_display();
   }
@@ -844,6 +855,7 @@ static void init(void) {
     s_temp_max = persist_read_int(PERSIST_TEMP_MAX);
     s_temp_min = persist_read_int(PERSIST_TEMP_MIN);
     s_precip = persist_read_int(PERSIST_PRECIP);
+    if (persist_exists(PERSIST_PRECIP_HOUR)) s_precip_hour = persist_read_int(PERSIST_PRECIP_HOUR);
     s_code = persist_read_int(PERSIST_CODE);
     s_have_data = true;
   }

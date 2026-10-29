@@ -20,7 +20,8 @@
       "NIGHT",
       "SUNRISE",
       "SUNSET",
-      "FORCE"
+      "FORCE",
+      "PRECIP_HOUR"
     ],
     "resources": {
       "media": [
@@ -178,5 +179,5 @@
       "watchface": false
     }
   },
-  "version": "2.7.22"
+  "version": "2.7.23"
 }
