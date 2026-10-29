@@ -1,5 +1,8 @@
 // MinMax Weather — PebbleKit JS companion.
-// Fetches today's forecast from Open-Meteo (free, no API key) and sends
+// Fetches today's forecast from Open-Meteo (free, no API key),
+// pinned to the ECMWF IFS model (user, 2026-10-29 — the default
+// model blend understated the day's rain chances: 19% vs 37%
+// for Toronto on 2026-10-29) and sends
 // only what the watch shows: min/max temp (the raw temperature pair;
 // v2.7.8–2.7.12 tried the feels-like/apparent pair and the user found
 // it read too low, so v2.7.13 reverts), precipitation probability,
@@ -13,7 +16,7 @@ function fetchFor(lat, lon) {
     '&timeformat=unixtime' +
     '&hourly=precipitation_probability' +
     '&current=weather_code' +
-    '&timezone=auto&forecast_days=1';
+    '&timezone=auto&forecast_days=1&models=ecmwf_ifs';
 
   var xhr = new XMLHttpRequest();
   xhr.onload = function () {
