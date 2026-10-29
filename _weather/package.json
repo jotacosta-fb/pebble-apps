@@ -19,7 +19,8 @@
       "REQUEST",
       "NIGHT",
       "SUNRISE",
-      "SUNSET"
+      "SUNSET",
+      "FORCE"
     ],
     "resources": {
       "media": [
@@ -177,5 +178,5 @@
       "watchface": false
     }
   },
-  "version": "2.7.21"
+  "version": "2.7.22"
 }

@@ -639,6 +639,10 @@ static void request_update_forced(bool force) {
   app_message_outbox_begin(&iter);
   if (iter) {
     dict_write_uint8(iter, MESSAGE_KEY_REQUEST, 1);
+    // A forced request (Select) must also force the PHONE side:
+    // without this the phone's own 30-minute throttle silently
+    // skipped the network round trip and Select looked dead.
+    if (force) dict_write_uint8(iter, MESSAGE_KEY_FORCE, 1);
     app_message_outbox_send();
     fetch_anim_start();
   }

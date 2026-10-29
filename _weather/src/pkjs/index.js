@@ -56,17 +56,23 @@ function fetchFor(lat, lon) {
   xhr.send();
 }
 
-function fetchWeather() {
+function fetchWeather(force) {
   // Fetch throttle (v2.7.9, mirrors the watch side): a fetch
   // younger than 30 minutes is reused — the watch is showing
   // it already, so skip the location + network round trip.
-  try {
-    var last = parseInt(localStorage.getItem('lastFetchAt') || '0', 10);
-    if (last && Date.now() - last < 30 * 60 * 1000) {
-      console.log('Fetch skipped: last one is still fresh');
-      return;
-    }
-  } catch (e) {}
+  // A forced fetch (Select on the watch, v2.7.22) bypasses
+  // this throttle: the watch's FORCE flag arrives in the
+  // appmessage payload, so Select always means a real
+  // location + network round trip on the phone too.
+  if (!force) {
+    try {
+      var last = parseInt(localStorage.getItem('lastFetchAt') || '0', 10);
+      if (last && Date.now() - last < 30 * 60 * 1000) {
+        console.log('Fetch skipped: last one is still fresh');
+        return;
+      }
+    } catch (e) {}
+  }
   navigator.geolocation.getCurrentPosition(
     function (pos) {
       // Remember the last good fix: a later location failure
@@ -98,6 +104,7 @@ Pebble.addEventListener('ready', function () {
   fetchWeather();
 });
 
-Pebble.addEventListener('appmessage', function () {
-  fetchWeather();
+Pebble.addEventListener('appmessage', function (e) {
+  var force = e.payload && e.payload.FORCE === 1;
+  fetchWeather(force);
 });
