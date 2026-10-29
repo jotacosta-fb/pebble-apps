@@ -528,8 +528,9 @@ static void temps_update_proc(Layer *layer, GContext *ctx) {
 // reading — the header draws nothing at all (user request).
 
 static void draw_droplet(GContext *ctx, int cx, int cy) {
-  // Teardrop: a triangle tip over a round bottom, ~16px tall.
-  static const GPoint drop_points[] = {{0, -8}, {-5, 2}, {5, 2}};
+  // Teardrop: a triangle tip over a round bottom, ~19px tall
+  // (grown slightly at the user's ask, v2.7.24).
+  static const GPoint drop_points[] = {{0, -10}, {-6, 3}, {6, 3}};
   static const GPathInfo drop_info = {.num_points = 3,
                                       .points = (GPoint *)drop_points};
   static GPath *path = NULL;
@@ -538,7 +539,7 @@ static void draw_droplet(GContext *ctx, int cx, int cy) {
   graphics_context_set_fill_color(
       ctx, PBL_IF_COLOR_ELSE(GColorBlueMoon, family_ink_color()));
   gpath_draw_filled(ctx, path);
-  graphics_fill_circle(ctx, GPoint(cx, cy + 2), 5);
+  graphics_fill_circle(ctx, GPoint(cx, cy + 3), 6);
 }
 
 static void draw_snowflake(GContext *ctx, int cx, int cy) {
@@ -546,30 +547,33 @@ static void draw_snowflake(GContext *ctx, int cx, int cy) {
       ctx, PBL_IF_COLOR_ELSE(GColorBlueMoon, family_ink_color()));
   graphics_context_set_stroke_width(ctx, 2);
   // Three spokes at 0/60/120 degrees — a small asterisk flake.
-  graphics_draw_line(ctx, GPoint(cx - 7, cy), GPoint(cx + 7, cy));
-  graphics_draw_line(ctx, GPoint(cx - 4, cy - 6), GPoint(cx + 4, cy + 6));
-  graphics_draw_line(ctx, GPoint(cx - 4, cy + 6), GPoint(cx + 4, cy - 6));
+  graphics_draw_line(ctx, GPoint(cx - 9, cy), GPoint(cx + 9, cy));
+  graphics_draw_line(ctx, GPoint(cx - 5, cy - 8), GPoint(cx + 5, cy + 8));
+  graphics_draw_line(ctx, GPoint(cx - 5, cy + 8), GPoint(cx + 5, cy - 8));
 }
 
 static void header_update_proc(Layer *layer, GContext *ctx) {
   if (!s_have_data || s_precip < 5) return;  // no header below 5%
   // Remaining-hours max with its hour, dot-joined like the
-  // min/max pair: "37% . 20:00". No hour (old data) -> "%" only.
+  // min/max pair. The dot is a drawn circle at the strip's
+  // vertical center (v2.7.24: a period character sat on the
+  // baseline and read low). No hour (old data) -> "%" only.
   GRect b = layer_get_bounds(layer);
   GFont font = fonts_get_system_font(FONT_KEY_GOTHIC_28);
 
-  char buf[16];
-  if (s_precip_hour >= 0) {
-    snprintf(buf, sizeof(buf), "%d%% . %02d:00", s_precip, s_precip_hour);
-  } else {
-    snprintf(buf, sizeof(buf), "%d%%", s_precip);
-  }
-  GSize t_sz = graphics_text_layout_get_content_size(
-      buf, font, GRect(0, 0, 300, b.size.h), GTextOverflowModeFill,
+  char buf1[8], buf2[8];
+  bool has_hour = (s_precip_hour >= 0);
+  snprintf(buf1, sizeof(buf1), "%d%%", s_precip);
+  if (has_hour) snprintf(buf2, sizeof(buf2), "%02d:00", s_precip_hour);
+  GSize sz1 = graphics_text_layout_get_content_size(
+      buf1, font, GRect(0, 0, 300, b.size.h), GTextOverflowModeFill,
       GTextAlignmentLeft);
+  GSize sz2 = has_hour ? graphics_text_layout_get_content_size(
+      buf2, font, GRect(0, 0, 300, b.size.h), GTextOverflowModeFill,
+      GTextAlignmentLeft) : GSize(0, 0);
 
-  int icon_w = 16, gap = 6;
-  int total = icon_w + gap + t_sz.w;
+  int icon_w = 20, gap = 6, dot_d = 6;
+  int total = icon_w + gap + sz1.w + (has_hour ? gap + dot_d + gap + sz2.w : 0);
   int x = (b.size.w - total) / 2;
   int cy = b.size.h / 2;
 
@@ -579,9 +583,18 @@ static void header_update_proc(Layer *layer, GContext *ctx) {
     draw_droplet(ctx, x + icon_w / 2, cy);
   }
   graphics_context_set_text_color(ctx, family_ink_color());
-  graphics_draw_text(ctx, buf, font,
-                     GRect(x + icon_w + gap, 0, t_sz.w + 2, b.size.h),
+  int tx = x + icon_w + gap;
+  graphics_draw_text(ctx, buf1, font,
+                     GRect(tx, 0, sz1.w + 2, b.size.h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+  if (has_hour) {
+    int dot_cx = tx + sz1.w + gap + dot_d / 2;
+    graphics_context_set_fill_color(ctx, family_ink_color());
+    graphics_fill_circle(ctx, GPoint(dot_cx, cy), dot_d / 2);
+    graphics_draw_text(ctx, buf2, font,
+                       GRect(dot_cx + dot_d / 2 + gap, 0, sz2.w + 2, b.size.h),
+                       GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+  }
 }
 
 static void refresh_display(void) {
