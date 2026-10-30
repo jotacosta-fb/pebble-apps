@@ -208,7 +208,7 @@ static void draw_days_big(GContext *ctx, GRect b) {
   }
   int num_w = i_sz.w + dot_gap + dot + dot_gap + f_sz.w;
   int num_h = i_sz.h;
-  int gap = 0;  // v2.8.14: unit tucked right under the number
+  int gap = -5;  // v2.8.15: 5 px ink-to-ink under the number
   // Optical centering (emulator-measured): LECO ink sits
   // low in its line box, so the line-height-centered block
   // reads 13 px low at 78 pt — lift it so the ink centers.
@@ -232,6 +232,10 @@ static void draw_days_big(GContext *ctx, GRect b) {
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
   // "days" right-aligned under the number's right edge — it
   // rides the +offset side of the wobble with the fraction.
+  // Dark grey (user, v2.8.15) to de-emphasize the unit; red
+  // still wins when under a day.
+  graphics_context_set_text_color(
+      ctx, battery_is_low() ? battery_ink() : GColorDarkGray);
   int word_x = frac_x + f_sz.w - w_sz.w;
   graphics_draw_text(ctx, "days", word_font,
                      GRect(word_x, block_top + num_h + gap, w_sz.w + 2,
@@ -293,13 +297,18 @@ static void pct_update_proc(Layer *layer, GContext *ctx) {
         "%", pct_font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
   }
 
-  int gap = 0;  // v2.8.14: unit tucked right under the number
+  int gap = -7;  // v2.8.15: 5 px ink-to-ink under the number
   // Optical centering (emulator-measured): same low LECO
   // ink as the days view — this block reads 11 px low at 78 pt.
   int block_top = b.size.h / 2 - (d_sz.h + gap + p_sz.h) / 2 - 11;
   int x = (b.size.w - d_sz.w) / 2 + family_wobble_offset;
   graphics_draw_text(ctx, buf, font, GRect(x, block_top, d_sz.w + 2, d_sz.h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+  // % in dark grey like "days" (user, v2.8.15); red still
+  // wins when under a day (moot here — the % view never
+  // shows when low — but kept for the same rule).
+  graphics_context_set_text_color(
+      ctx, battery_is_low() ? battery_ink() : GColorDarkGray);
   int pct_x = x + d_sz.w - p_sz.w;
   graphics_draw_text(ctx, "%", pct_font,
                      GRect(pct_x, block_top + d_sz.h + gap, p_sz.w + 2,
