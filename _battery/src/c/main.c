@@ -33,6 +33,7 @@ static Window *s_window;
 
 
 static GFont s_f78, s_f72, s_f68, s_f48, s_f56, s_f40;  // LECO 1976 (custom font)
+static GFont s_word42;  // LECO 42 for the "days" word (letters, not digits)
 static GFont s_p39, s_p36, s_p34, s_p28, s_p24, s_p20;  // LECO 1976 %-only fonts at HALF the digit heights (user: full size was too large)
 static Layer *s_pct_layer;
 // Appear wobble is the family engine (shared/family.h):
@@ -170,8 +171,11 @@ static void draw_days_big(GContext *ctx, GRect b) {
   // line, bigger (72 on emery), with "days" right-aligned
   // beneath it, flush with the number's right edge.
   GFont font = big ? digit_font_big() : s_f48;
-  GFont word_font = fonts_get_system_font(
-      big ? FONT_KEY_GOTHIC_28_BOLD : FONT_KEY_GOTHIC_24_BOLD);
+  // "days" in LECO 42 (user, v2.8.16) — same typeface as
+  // the digits, clearly bigger than the old Gothic 28 Bold;
+  // small screens keep a system bold (28, up from 24).
+  GFont word_font = big ? s_word42 : fonts_get_system_font(
+      FONT_KEY_GOTHIC_28_BOLD);
   GRect measure = GRect(0, 0, 300, 200);
   GSize i_sz = graphics_text_layout_get_content_size(
       int_buf, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
@@ -208,11 +212,11 @@ static void draw_days_big(GContext *ctx, GRect b) {
   }
   int num_w = i_sz.w + dot_gap + dot + dot_gap + f_sz.w;
   int num_h = i_sz.h;
-  int gap = -5;  // v2.8.15: 5 px ink-to-ink under the number
+  int gap = -8;  // v2.8.16: LECO 42 ink sits lower in its box; -8 keeps 5 px ink-to-ink
   // Optical centering (emulator-measured): LECO ink sits
   // low in its line box, so the line-height-centered block
   // reads 13 px low at 78 pt — lift it so the ink centers.
-  int block_top = b.size.h / 2 - (num_h + gap + w_sz.h) / 2 - 13;
+  int block_top = b.size.h / 2 - (num_h + gap + w_sz.h) / 2 - 11;
   // The wobble splits the number around the dot (user, v2.6.0):
   // the left side slides left, the right side slides right, the
   // dot itself stays exactly in place.
@@ -515,6 +519,7 @@ static void init(void) {
   // replied.
   family_night_load(PERSIST_NIGHT, PERSIST_SUNRISE, PERSIST_SUNSET);
   s_f72 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_72));
+  s_word42 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_42));
 #if defined(PBL_PLATFORM_EMERY)
   s_f78 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_78));
   s_p39 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_PCT_39));
@@ -546,6 +551,7 @@ static void init(void) {
 static void deinit(void) {
   window_destroy(s_window);
   fonts_unload_custom_font(s_f72);
+  fonts_unload_custom_font(s_word42);
 #if defined(PBL_PLATFORM_EMERY)
   fonts_unload_custom_font(s_f78);
   fonts_unload_custom_font(s_p39);
