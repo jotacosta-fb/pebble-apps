@@ -10,8 +10,9 @@
 #include "../../shared/family.h"
 
 // MinMax Weather — a deliberately tiny weather app.
-// Shows exactly: today's min-max temperature, chance of precipitation,
-// and a condition icon. Data comes from the PebbleKit JS companion
+// Shows exactly: today's min-max temperature and chance of
+// precipitation (now in the footer). Data comes from the
+// PebbleKit JS companion
 // (Open-Meteo, no API key).
 
 static Window *s_window;
@@ -51,8 +52,7 @@ static int font_height_of(GFont f) {
   return 40;
 }
 static Layer *s_temps_layer;
-static Layer *s_header_layer;
-static Layer *s_icon_layer;
+static Layer *s_footer_layer;
 static Layer *s_qt_layer;
 
 // Weather state
@@ -80,131 +80,6 @@ static void refresh_display(void);
 
 static void tick_handler(struct tm *tick_time, TimeUnits units) {
   if (family_night_tick()) refresh_display();
-}
-
-// ---------- Icon drawing ----------
-
-// Icon geometry is authored for a ~78px-tall layer and scaled to fit.
-static int s_k = 100;
-#define SC(v) ((v) * s_k / 100)
-
-static void draw_cloud(GContext *ctx, GPoint c) {
-  // Cloud outline built by stroking the bumps, then erasing the interior
-  // strokes with white fills, leaving only the outer outline.
-  GPoint a = GPoint(c.x - SC(19), c.y + SC(6));
-  GPoint b = GPoint(c.x + SC(4), c.y - SC(7));
-  GPoint d = GPoint(c.x + SC(24), c.y + SC(7));
-  int ra = SC(16), rb = SC(22), rd = SC(13);
-  int sw = s_k >= 85 ? 3 : 2;
-
-  graphics_context_set_stroke_color(ctx, family_ink_color());
-  graphics_context_set_stroke_width(ctx, sw);
-  graphics_draw_circle(ctx, a, ra);
-  graphics_draw_circle(ctx, b, rb);
-  graphics_draw_circle(ctx, d, rd);
-
-  // Interior: light gray (user: clouds grey inside). The r-2 fills
-  // both erase the inner bump strokes and lay the gray in.
-  graphics_context_set_fill_color(ctx, GColorLightGray);
-  graphics_fill_circle(ctx, a, ra - 2);
-  graphics_fill_circle(ctx, b, rb - 2);
-  graphics_fill_circle(ctx, d, rd - 2);
-  // Flatten the base in the same gray — but only across the body
-  // (±34, where the side lines run)...
-  graphics_fill_rect(ctx, GRect(c.x - SC(34), c.y - SC(1), SC(68), SC(22)), 0, GCornerNone);
-  // ...while the strips outside the sides stay background-white so
-  // the outermost bump arcs (left -35, right +37) don't bulge out.
-  graphics_context_set_fill_color(ctx, family_bg_color());
-  graphics_fill_rect(ctx, GRect(c.x - SC(41), c.y - SC(1), SC(9), SC(22)), 0, GCornerNone);
-  graphics_fill_rect(ctx, GRect(c.x + SC(32), c.y - SC(1), SC(9), SC(22)), 0, GCornerNone);
-
-  graphics_context_set_stroke_color(ctx, family_ink_color());
-  graphics_context_set_stroke_width(ctx, sw);
-  graphics_draw_line(ctx, GPoint(c.x - SC(34), c.y + SC(21)), GPoint(c.x + SC(34), c.y + SC(21)));
-  // Sides run all the way up to the band's top edge, where the bump
-  // arcs exit it — so the outline is one continuous line (they used
-  // to start ~11px lower, leaving a gap on each side).
-  graphics_draw_line(ctx, GPoint(c.x - SC(34), c.y - SC(1)), GPoint(c.x - SC(34), c.y + SC(21)));
-  graphics_draw_line(ctx, GPoint(c.x + SC(34), c.y - SC(1)), GPoint(c.x + SC(34), c.y + SC(21)));
-}
-
-static void draw_sun(GContext *ctx, GPoint c, int r) {
-  graphics_context_set_fill_color(ctx, PBL_IF_COLOR_ELSE(GColorChromeYellow, GColorWhite));
-  graphics_fill_circle(ctx, c, r);
-  graphics_context_set_stroke_color(ctx, family_ink_color());
-  graphics_context_set_stroke_width(ctx, 3);
-  graphics_draw_circle(ctx, c, r);
-  for (int i = 0; i < 8; i++) {
-    int32_t ang = DEG_TO_TRIGANGLE(i * 45);
-    GPoint p1 = gpoint_from_polar(GRect(c.x - r - 4, c.y - r - 4, (r + 4) * 2, (r + 4) * 2),
-                                  GOvalScaleModeFitCircle, ang);
-    GPoint p2 = gpoint_from_polar(GRect(c.x - r - 10, c.y - r - 10, (r + 10) * 2, (r + 10) * 2),
-                                  GOvalScaleModeFitCircle, ang);
-    graphics_draw_line(ctx, p1, p2);
-  }
-}
-
-static void icon_update_proc(Layer *layer, GContext *ctx) {
-  GRect b = layer_get_bounds(layer);
-  // Center sits where it always did on screen: the taller frame
-  // (see window_load) shifts the local center down by the extra
-  // headroom, so b.size.h/2 lands on the old -4 position.
-  // Art rides 6px high in its layer (the layer has 12px of
-  // headroom): the laddered max now reaches up toward the icon
-  // and the cloud's base must clear its top.
-  GPoint c = GPoint(b.size.w / 2, b.size.h / 2 - 6);
-  s_k = (b.size.h - 12) * 65 / 78;  // scale off the original height, x0.65 (user: icon still too big at x0.85)
-  if (s_k < 40) s_k = 40;
-  if (s_k > 110) s_k = 110;
-
-  if (s_code < 0) {
-    draw_cloud(ctx, c);
-    return;
-  }
-
-  if (s_code == 0) {
-    draw_sun(ctx, c, SC(20));
-  } else if (s_code == 1 || s_code == 2) {
-    draw_sun(ctx, GPoint(c.x - SC(26), c.y - SC(18)), SC(14));
-    draw_cloud(ctx, GPoint(c.x + SC(5), c.y + SC(8)));
-  } else if (s_code == 3) {
-    draw_cloud(ctx, c);
-  } else if (s_code == 45 || s_code == 48) {
-    draw_cloud(ctx, GPoint(c.x, c.y - SC(10)));
-    graphics_context_set_stroke_color(ctx, family_ink_color());
-    graphics_context_set_stroke_width(ctx, 3);
-    for (int i = 0; i < 3; i++) {
-      int y = c.y + SC(18) + i * SC(7);
-      graphics_draw_line(ctx, GPoint(c.x - SC(25), y), GPoint(c.x + SC(25), y));
-    }
-  } else if ((s_code >= 71 && s_code <= 77) || s_code == 85 || s_code == 86) {
-    draw_cloud(ctx, GPoint(c.x, c.y - SC(10)));
-    graphics_context_set_stroke_color(ctx, PBL_IF_COLOR_ELSE(GColorBlueMoon, family_ink_color()));
-    graphics_context_set_stroke_width(ctx, 2);
-    for (int i = -1; i <= 1; i++) {
-      GPoint p = GPoint(c.x + i * SC(20), c.y + SC(20));
-      graphics_draw_line(ctx, GPoint(p.x - SC(5), p.y), GPoint(p.x + SC(5), p.y));
-      graphics_draw_line(ctx, GPoint(p.x, p.y - SC(5)), GPoint(p.x, p.y + SC(5)));
-      graphics_draw_line(ctx, GPoint(p.x - SC(4), p.y - SC(4)), GPoint(p.x + SC(4), p.y + SC(4)));
-      graphics_draw_line(ctx, GPoint(p.x - SC(4), p.y + SC(4)), GPoint(p.x + SC(4), p.y - SC(4)));
-    }
-  } else if (s_code >= 95) {
-    draw_cloud(ctx, GPoint(c.x, c.y - SC(10)));
-    graphics_context_set_stroke_color(ctx, PBL_IF_COLOR_ELSE(GColorChromeYellow, family_ink_color()));
-    graphics_context_set_stroke_width(ctx, 4);
-    graphics_draw_line(ctx, GPoint(c.x + SC(3), c.y + SC(13)), GPoint(c.x - SC(6), c.y + SC(27)));
-    graphics_draw_line(ctx, GPoint(c.x - SC(6), c.y + SC(27)), GPoint(c.x + SC(3), c.y + SC(27)));
-    graphics_draw_line(ctx, GPoint(c.x + SC(3), c.y + SC(27)), GPoint(c.x - SC(5), c.y + SC(40)));
-  } else {
-    // Rain / drizzle / showers
-    draw_cloud(ctx, GPoint(c.x, c.y - SC(10)));
-    graphics_context_set_stroke_color(ctx, PBL_IF_COLOR_ELSE(GColorBlueMoon, family_ink_color()));
-    graphics_context_set_stroke_width(ctx, 3);
-    for (int i = -1; i <= 1; i++) {
-      int x = c.x + i * SC(20);
-      graphics_draw_line(ctx, GPoint(x - SC(3), c.y + SC(15)), GPoint(x - SC(7), c.y + SC(28)));
-    }
-  }
 }
 
 // ---------- Refreshing the screen ----------
@@ -262,10 +137,10 @@ static void pick_temps_font(bool big, const char *min_buf,
 // then this pass reads their ink from the framebuffer into a
 // mask, erases it, and writes it back rotated about the ink's
 // own center, 2x2 supersampled so the edges stay smooth. The
-// temps layer is created FIRST (before icon and header), so
+// temps layer is created FIRST (before the footer), so
 // when this runs, the framebuffer under the temps holds only
 // background and the mask is purely the temps' own ink. The
-// precip line and the condition icon stay upright.
+// precip line stays upright.
 #define LEAN_TEMPS_DEG 5.0
 static uint8_t s_lean_mask[(264 * 264 + 7) / 8];
 
@@ -428,7 +303,7 @@ static void temps_update_proc(Layer *layer, GContext *ctx) {
   // start from clean background every refresh — otherwise the
   // previous frame's rotated ink joins the mask and the tilt
   // compounds. The layer was transparent over this same color,
-  // and the icon draws after, so nothing visual changes.
+  // and the footer draws after, so nothing visual changes.
   graphics_context_set_fill_color(ctx, family_bg_color());
   graphics_fill_rect(ctx, b, 0, GCornerNone);
   // LECO 1976 custom font (from the Lean watchface).
@@ -522,7 +397,7 @@ static void temps_update_proc(Layer *layer, GContext *ctx) {
   lean_pass(layer, ctx);
 }
 
-// ---------- Header: precip chance as icon + % ----------
+// ---------- Footer: precip chance as icon + % ----------
 // The word (Rain/Snow/Precip) is gone: a small droplet or snowflake
 // icon sits beside the percentage. Below 5% — or before the first
 // reading — the header draws nothing at all (user request).
@@ -552,7 +427,7 @@ static void draw_snowflake(GContext *ctx, int cx, int cy) {
   graphics_draw_line(ctx, GPoint(cx - 5, cy + 8), GPoint(cx + 5, cy - 8));
 }
 
-static void header_update_proc(Layer *layer, GContext *ctx) {
+static void footer_update_proc(Layer *layer, GContext *ctx) {
   if (!s_have_data || s_precip < 5) return;  // no header below 5%
   // Remaining-hours max with its hour, dot-joined like the
   // min/max pair. The dot is a drawn circle at the strip's
@@ -634,9 +509,8 @@ static void refresh_display(void) {
                     GRect(0, rb.size.h / 2 - frame_h / 2 + font_h / 5 - 6,
                           rb.size.w, frame_h));
   }
-  layer_mark_dirty(s_header_layer);
+  layer_mark_dirty(s_footer_layer);
   layer_mark_dirty(s_temps_layer);
-  layer_mark_dirty(s_icon_layer);
   if (s_qt_layer) layer_mark_dirty(s_qt_layer);
 }
 
@@ -794,7 +668,7 @@ static void window_load(Window *window) {
   // Temps layer FIRST (v2.1.0): the Lean pass in its
   // proc needs a framebuffer holding only background
   // beneath the temps, so it must draw before the
-  // icon and header. Ink never overlaps (19px gap),
+  // footer. Ink never overlaps (19px gap),
   // so the stacking change is invisible.
   // Big min-max temperature — LECO numbers, drawn underscore separator
   // Main layer placed so the DIGITS' visual center lands on the
@@ -805,21 +679,13 @@ static void window_load(Window *window) {
   layer_set_update_proc(s_temps_layer, temps_update_proc);
   layer_add_child(root, s_temps_layer);
 
-  // Condition icon at the BOTTOM now (user) — the frame keeps its
-  // 12px of extra headroom; the art center lands ~17% of the
-  // screen height up from the bottom edge.
-  s_icon_layer = layer_create(
-      GRect(0, h - h * 17 / 100 - (h * 34 / 100 + 12) / 2 + 6, w,
-            h * 34 / 100 + 12));
-  layer_set_update_proc(s_icon_layer, icon_update_proc);
-  layer_add_child(root, s_icon_layer);
-
-  // Precipitation chance is now the FOOTER: small icon + %,
-  // hidden at 0% (same 6% margin, mirrored to the bottom).
-  // Precipitation line back up top (it traded places with the icon).
-  s_header_layer = layer_create(GRect(0, h * 6 / 100, w, 36));
-  layer_set_update_proc(s_header_layer, header_update_proc);
-  layer_add_child(root, s_header_layer);
+  // Precipitation line is now the FOOTER (user, v2.7.25):
+  // the bottom condition icon is gone, and the rain info
+  // takes its place — centered where the icon's art sat,
+  // ~17% of the screen height up from the bottom edge.
+  s_footer_layer = layer_create(GRect(0, h - h * 17 / 100 - 18, w, 36));
+  layer_set_update_proc(s_footer_layer, footer_update_proc);
+  layer_add_child(root, s_footer_layer);
 
   // Quiet Time layer LAST (topmost, full screen, draws only the
   // corner earmarks — transparent otherwise).
@@ -833,8 +699,7 @@ static void window_load(Window *window) {
 static void window_unload(Window *window) {
   fetch_anim_stop();
   layer_destroy(s_temps_layer);
-  layer_destroy(s_header_layer);
-  layer_destroy(s_icon_layer);
+  layer_destroy(s_footer_layer);
   layer_destroy(s_qt_layer);
 }
 
