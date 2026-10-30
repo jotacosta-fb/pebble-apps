@@ -68,26 +68,29 @@ static void tick_handler(struct tm *tick_time, TimeUnits units) {
 
 // ---------- Battery icon ----------
 
-// The battery is no longer a separate icon: one BIG battery is
-// drawn as the background behind the percentage digits (user:
-// merge the numbers and the battery icon).
-static void draw_battery_bg(GContext *ctx, GRect b) {
+// v2.8.12 (user): the battery is no longer a big background
+// behind the digits — it is a small header glyph at the top,
+// centered, with the same proportional fill and color rules.
+// (An earlier header-position trial of the BIG battery was
+// reverted; this is different: the icon itself is small now.)
+// The header never wobbles; only the readout does.
+static void draw_battery_header(GContext *ctx, GRect b) {
   bool big = b.size.w >= 180;
-  int bw = big ? 172 : 126;
-  int bh = big ? 100 : 78;
-  int x = (b.size.w - bw) / 2;
-  // Centered on screen, as before (the header-position trial was
-  // reverted at the user's request: keep the center alignment).
-  int y = (b.size.h - bh) / 2;
-  int sw = 3;
+  int bw = big ? 56 : 44;
+  int bh = big ? 26 : 20;
+  int sw = 2;
+  int nub_w = big ? 4 : 3;
+  int nub_h = bh / 2;
+  int total_w = bw + 2 + nub_w;
+  int x = (b.size.w - total_w) / 2;
+  int y = b.size.h * 6 / 100;  // same top margin as _weather's header
 
   // Outline + terminal nub
   graphics_context_set_stroke_color(ctx, family_ink_color());
   graphics_context_set_stroke_width(ctx, sw);
   graphics_draw_rect(ctx, GRect(x, y, bw, bh));
   graphics_context_set_fill_color(ctx, family_ink_color());
-  int nub_h = bh / 3;
-  graphics_fill_rect(ctx, GRect(x + bw + 2, y + (bh - nub_h) / 2, 5, nub_h),
+  graphics_fill_rect(ctx, GRect(x + bw + 2, y + (bh - nub_h) / 2, nub_w, nub_h),
                      0, GCornerNone);
 
   // Fill level, inset from the outline
@@ -100,10 +103,7 @@ static void draw_battery_bg(GContext *ctx, GRect b) {
     // green; only a learned rate can claim this — v2.8.3).
     bool low = !s_charging && s_rate_x10 > 0 && s_days_x10 >= 0 &&
                s_days_x10 < 10;
-    // Lighter fills (user): pale greens behind the digits; the
-    // low-battery red stays saturated so the alert still pops.
-    // At night the fills go darker (user's night mode) so the
-    // white digits stay readable over them.
+    // At night the fills go darker (user's night mode).
     graphics_context_set_fill_color(
         ctx, low ? GColorRed
                  : (s_charging
@@ -210,8 +210,9 @@ static void pct_update_proc(Layer *layer, GContext *ctx) {
   bool big = b.size.w >= 180;
   graphics_context_set_text_color(ctx, family_ink_color());
 
-  // Merged layout: the big battery is the background; digits on top.
-  draw_battery_bg(ctx, b);
+  // Header layout (v2.8.12): small battery glyph up top,
+  // digits centered on a plain background.
+  draw_battery_header(ctx, b);
 
   if (s_pct < 0) {
     GFont f = s_f48;
@@ -365,7 +366,7 @@ static void days_update_proc(Layer *layer, GContext *ctx) {
 static void refresh_display(void) {
   if (s_window) window_set_background_color(s_window, family_bg_color());
   layer_mark_dirty(s_days_layer);
-  layer_mark_dirty(s_pct_layer);  // draws digits + battery background
+  layer_mark_dirty(s_pct_layer);  // draws digits + header icon
   layer_mark_dirty(s_pct_layer);
 }
 
@@ -420,10 +421,9 @@ static void window_load(Window *window) {
 
 
 
-  // Big current percentage over the big battery background —
-  // one merged graphic now (the separate bottom icon is gone).
-  // Full-screen layer: the background battery centers itself and
-  // the proc places the digit box on the screen's vertical center.
+  // Full-screen layer: the small battery header sits up top
+  // and the proc places the digit box on the screen's vertical
+  // center over a plain background.
   s_pct_layer = layer_create(GRect(0, 0, w, h));
   layer_set_update_proc(s_pct_layer, pct_update_proc);
   layer_add_child(root, s_pct_layer);
