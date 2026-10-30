@@ -304,11 +304,17 @@ static void main_update_proc(Layer *layer, GContext *ctx) {
       graphics_context_set_fill_color(ctx, GColorBlack);
       draw_value(ctx, b, START_LIFE);
     }
-    return;
+  } else {
+    draw_markers(ctx, b);
+    draw_value(ctx, b, s_life);
   }
 
-  draw_markers(ctx, b);
-  draw_value(ctx, b, s_life);
+  // Corner paint (user, v1.10.3): the shared family marks —
+  // black like the digits and markers, gated on the tint
+  // being light (the shared rule, not a per-app override).
+  // Drawn after everything, including the reset-animation
+  // frames, so the corners stay painted throughout.
+  family_earmarks(ctx, b, GColorBlack, life_color(s_life));
 }
 
 static void window_load(Window *window) {

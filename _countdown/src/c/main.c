@@ -95,8 +95,10 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   if (s_state == ST_DONE) {
     s_blink_on = !s_blink_on;
     layer_mark_dirty(s_main_layer);
+    if (s_back_layer) layer_mark_dirty(s_back_layer);
   } else if (s_state == ST_RUNNING) {
     layer_mark_dirty(s_main_layer);
+    if (s_back_layer) layer_mark_dirty(s_back_layer);
   }
 }
 
@@ -291,6 +293,7 @@ static void main_update_proc(Layer *layer, GContext *ctx) {
 // family_wobble_offset for the underline only.
 static void wobble_hook(int offset) {
   if (s_main_layer) layer_mark_dirty(s_main_layer);
+  if (s_back_layer) layer_mark_dirty(s_back_layer);
 }
 
 static void window_appear(Window *window) {
@@ -303,6 +306,15 @@ static void window_appear(Window *window) {
 // Full-screen layer behind the time: a giant light-grey pause
 // symbol (two bars), centered on the screen.
 static void back_update_proc(Layer *layer, GContext *ctx) {
+  // Corner paint (user, v1.5.4): the shared family marks,
+  // light backgrounds only — painted here, in the full-screen
+  // back layer, before the paused check, so the corners show
+  // in every state. The main layer is only a center strip and
+  // cannot paint screen corners (its clip box), and the DONE
+  // blink returns early from the main proc — the back layer
+  // keeps the corners steady through both. Ink black on the
+  // plain white screen; the bg arg only feeds the gate.
+  family_earmarks(ctx, layer_get_bounds(layer), GColorBlack, GColorWhite);
   if (s_state != ST_PAUSED) return;
   GRect b = layer_get_bounds(layer);
   bool big = b.size.w >= 180;
