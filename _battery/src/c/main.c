@@ -32,8 +32,8 @@
 static Window *s_window;
 
 
-static GFont s_f72, s_f68, s_f48, s_f56, s_f40;  // LECO 1976 (custom font)
-static GFont s_p36, s_p34, s_p28, s_p24, s_p20;  // LECO 1976 %-only fonts at HALF the digit heights (user: full size was too large)
+static GFont s_f78, s_f72, s_f68, s_f48, s_f56, s_f40;  // LECO 1976 (custom font)
+static GFont s_p39, s_p36, s_p34, s_p28, s_p24, s_p20;  // LECO 1976 %-only fonts at HALF the digit heights (user: full size was too large)
 static Layer *s_pct_layer;
 // Appear wobble is the family engine (shared/family.h):
 // the two-line readout wobbles as a unit — the days number
@@ -66,6 +66,18 @@ static void tick_handler(struct tm *tick_time, TimeUnits units) {
   if (family_night_tick()) refresh_display();
 }
 #define DEFAULT_RATE_X10 150   // 15%/day (~6-7 days) until a rate is learned
+
+// Biggest digit font (v2.8.14): 78 on emery, 72 elsewhere.
+// 78 exceeds Pebble's 256 px glyph cap when generated for
+// every platform, but builds fine restricted to emery —
+// the same pattern _weather already uses for its 78/80.
+// Other platforms never touch the emery-only resources:
+// the load below is guarded by #if defined(PBL_PLATFORM_EMERY),
+// the same guard _weather uses for its emery-only fonts.
+static GFont digit_font_big(void) {
+  return PBL_PLATFORM_SWITCH(PBL_PLATFORM_TYPE_CURRENT,
+                             s_f72, s_f72, s_f72, s_f72, s_f78, s_f72, s_f72);
+}
 
 // ---------- Battery icon ----------
 
@@ -127,6 +139,7 @@ static void draw_battery_header(GContext *ctx, GRect b) {
 // The %-only companion for a digit font: half its height (the
 // full-size % read too large). At half size it fits every budget.
 static GFont pct_font_for(GFont df) {
+  if (df == s_f78) return s_p39;
   if (df == s_f72) return s_p36;
   if (df == s_f56) return s_p28;
   if (df == s_f48) return s_p24;
@@ -156,7 +169,7 @@ static void draw_days_big(GContext *ctx, GRect b) {
   // Two-line readout (v2.8.13, user): the number on its own
   // line, bigger (72 on emery), with "days" right-aligned
   // beneath it, flush with the number's right edge.
-  GFont font = big ? s_f72 : s_f48;
+  GFont font = big ? digit_font_big() : s_f48;
   GFont word_font = fonts_get_system_font(
       big ? FONT_KEY_GOTHIC_28_BOLD : FONT_KEY_GOTHIC_24_BOLD);
   GRect measure = GRect(0, 0, 300, 200);
@@ -195,11 +208,11 @@ static void draw_days_big(GContext *ctx, GRect b) {
   }
   int num_w = i_sz.w + dot_gap + dot + dot_gap + f_sz.w;
   int num_h = i_sz.h;
-  int gap = 4;
+  int gap = 0;  // v2.8.14: unit tucked right under the number
   // Optical centering (emulator-measured): LECO ink sits
   // low in its line box, so the line-height-centered block
-  // reads 12 px low — lift it so the ink centers on screen.
-  int block_top = b.size.h / 2 - (num_h + gap + w_sz.h) / 2 - 12;
+  // reads 13 px low at 78 pt — lift it so the ink centers.
+  int block_top = b.size.h / 2 - (num_h + gap + w_sz.h) / 2 - 13;
   // The wobble splits the number around the dot (user, v2.6.0):
   // the left side slides left, the right side slides right, the
   // dot itself stays exactly in place.
@@ -252,7 +265,7 @@ static void pct_update_proc(Layer *layer, GContext *ctx) {
   // the number on top, bigger (72 on emery), with % right-
   // aligned beneath it, flush with the number's right edge.
   // The whole block wobbles as one piece, as before.
-  GFont font = big ? s_f72 : s_f48;
+  GFont font = big ? digit_font_big() : s_f48;
   GFont pct_font = pct_font_for(font);
 
   char buf[8];
@@ -280,10 +293,10 @@ static void pct_update_proc(Layer *layer, GContext *ctx) {
         "%", pct_font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
   }
 
-  int gap = 4;
+  int gap = 0;  // v2.8.14: unit tucked right under the number
   // Optical centering (emulator-measured): same low LECO
-  // ink as the days view — this block reads 10 px low.
-  int block_top = b.size.h / 2 - (d_sz.h + gap + p_sz.h) / 2 - 10;
+  // ink as the days view — this block reads 11 px low at 78 pt.
+  int block_top = b.size.h / 2 - (d_sz.h + gap + p_sz.h) / 2 - 11;
   int x = (b.size.w - d_sz.w) / 2 + family_wobble_offset;
   graphics_draw_text(ctx, buf, font, GRect(x, block_top, d_sz.w + 2, d_sz.h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
@@ -493,6 +506,10 @@ static void init(void) {
   // replied.
   family_night_load(PERSIST_NIGHT, PERSIST_SUNRISE, PERSIST_SUNSET);
   s_f72 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_72));
+#if defined(PBL_PLATFORM_EMERY)
+  s_f78 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_78));
+  s_p39 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_PCT_39));
+#endif
   s_f68 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_68));
   s_f48 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_48));
   s_f56 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_56));
@@ -520,6 +537,10 @@ static void init(void) {
 static void deinit(void) {
   window_destroy(s_window);
   fonts_unload_custom_font(s_f72);
+#if defined(PBL_PLATFORM_EMERY)
+  fonts_unload_custom_font(s_f78);
+  fonts_unload_custom_font(s_p39);
+#endif
   fonts_unload_custom_font(s_f68);
   fonts_unload_custom_font(s_f48);
   fonts_unload_custom_font(s_f56);
