@@ -154,6 +154,109 @@ static GFont pct_font_for(GFont df) {
   return s_p34;  // df == s_f68
 }
 
+// ---------- Lean the numbers (user, v2.8.24) ----------
+// _weather's trick, mirrored: the digits are drawn upright as
+// usual, then this pass reads their ink from the framebuffer
+// into a mask, erases it, and writes it back rotated about the
+// ink's own center, 2x2 supersampled so the edges stay smooth.
+// _weather leans 5 deg ANTICLOCKWISE; _battery leans 5 deg
+// CLOCKWISE (angle negated), so it differs from _weather — and
+// at 5 deg it reads as a lean, not the face's 20 deg tilt. The
+// unit ("days"/"%") stays upright, like _weather's precip line
+// staying upright under leaning temps. Runs between the digits
+// draw and the unit draw, so the unit is never captured and
+// always paints over any digit ink that dips into its rows.
+// The caller clears the number zone first (_weather v2.1.0
+// lesson — otherwise the previous frame's rotated ink joins
+// the mask and the tilt compounds).
+#define LEAN_NUMBERS_ANG (-(TRIG_MAX_ANGLE * 5 / 360))
+static uint8_t s_lean_mask[(264 * 264 + 7) / 8];
+static int lean_bit(int i) {
+  return (s_lean_mask[i >> 3] >> (i & 7)) & 1;
+}
+static void lean_set(int i, int v) {
+  if (v) s_lean_mask[i >> 3] |= (uint8_t)(1 << (i & 7));
+  else s_lean_mask[i >> 3] &= (uint8_t)~(1 << (i & 7));
+}
+static void lean_pass_numbers(GContext *ctx, GRect rect, GColor ink) {
+#if defined(PBL_COLOR)
+  GBitmap *fb = graphics_capture_frame_buffer(ctx);
+  if (!fb) return;
+  GRect fbb = gbitmap_get_bounds(fb);
+  int W = fbb.size.w, H = fbb.size.h;
+  if ((W * H + 7) / 8 > (int)sizeof(s_lean_mask)) {
+    graphics_release_frame_buffer(ctx, fb);
+    return;
+  }
+  uint8_t bg = family_bg_color().argb;
+  uint8_t ink_argb = ink.argb;
+  int x0 = rect.origin.x, y0 = rect.origin.y;
+  int x1 = x0 + rect.size.w - 1, y1 = y0 + rect.size.h - 1;
+  memset(s_lean_mask, 0, (W * H + 7) / 8);
+  int ix0 = W, iy0 = H, ix1 = -1, iy1 = -1;
+  for (int y = y0; y <= y1 && y < H; y++) {
+    if (y < 0) continue;
+    GBitmapDataRowInfo row = gbitmap_get_data_row_info(fb, y);
+    int rx0 = x0 > row.min_x ? x0 : row.min_x;
+    int rx1 = x1 < row.max_x ? x1 : row.max_x;
+    for (int x = rx0; x <= rx1; x++) {
+      if (x < 0) continue;
+      if (row.data[x] == bg) continue;
+      int i = y * W + x;
+      s_lean_mask[i >> 3] |= (uint8_t)(1 << (i & 7));
+      row.data[x] = bg;
+      if (x < ix0) ix0 = x;
+      if (x > ix1) ix1 = x;
+      if (y < iy0) iy0 = y;
+      if (y > iy1) iy1 = y;
+    }
+  }
+  if (ix1 < ix0) {
+    graphics_release_frame_buffer(ctx, fb);
+    return;
+  }
+  int cx16 = (ix0 + ix1) << 15;  // ink center * 65536
+  int cy16 = (iy0 + iy1) << 15;
+  int iw = ix1 - ix0 + 1, ih = iy1 - iy0 + 1;
+  int rad = family_isqrt(iw * iw + ih * ih) / 2 + 2;
+  // Clockwise: _weather's anticlockwise form with a negated angle.
+  int32_t cs = cos_lookup(LEAN_NUMBERS_ANG);
+  int32_t sn = sin_lookup(LEAN_NUMBERS_ANG);
+  uint8_t lut[5];
+  for (int cov = 0; cov <= 4; cov++) {
+    lut[cov] = family_blend(ink_argb, bg, cov);
+  }
+  int dy0 = (cy16 >> 16) - rad;
+  if (dy0 < 0) dy0 = 0;
+  int dy1 = (cy16 >> 16) + rad;
+  if (dy1 >= H) dy1 = H - 1;
+  for (int y = dy0; y <= dy1; y++) {
+    GBitmapDataRowInfo row = gbitmap_get_data_row_info(fb, y);
+    int dx0 = (cx16 >> 16) - rad;
+    if (dx0 < row.min_x) dx0 = row.min_x;
+    int dx1 = (cx16 >> 16) + rad;
+    if (dx1 > row.max_x) dx1 = row.max_x;
+    for (int x = dx0; x <= dx1; x++) {
+      int cov = 0;
+      for (int s2 = 0; s2 < 4; s2++) {
+        int32_t ox = (s2 & 1) ? 16384 : -16384;  // +/- 0.25 px
+        int32_t oy = (s2 & 2) ? 16384 : -16384;
+        int64_t ddx = ((int64_t)(x << 16) - cx16) + ox;
+        int64_t ddy = ((int64_t)(y << 16) - cy16) + oy;
+        int px = (int)((cx16 + ((ddx * cs - ddy * sn) >> 16)) >> 16);
+        int py = (int)((cy16 + ((ddx * sn + ddy * cs) >> 16)) >> 16);
+        if (px >= 0 && py >= 0 && px < W && py < H) {
+          int i = py * W + px;
+          cov += (s_lean_mask[i >> 3] >> (i & 7)) & 1;
+        }
+      }
+      if (cov) row.data[x] = lut[cov];
+    }
+  }
+  graphics_release_frame_buffer(ctx, fb);
+#endif
+}
+
 // The main readout (v2.5.0, user: simplify): no % — the big
 // number IS the days left, with the battery fill behind it. The
 // % survives while charging (days can't be predicted then), in
@@ -229,6 +332,15 @@ static void draw_days_big(GContext *ctx, GRect b) {
   int int_x = base - family_wobble_offset;
   int dot_x = base + i_sz.w + dot_gap;
   int frac_x = dot_x + dot + dot_gap + family_wobble_offset;
+  // Lean zone: the number's own rect, generously expanded for
+  // the wobble offsets and the lean sweep. Cleared first (see
+  // the lean note above); the unit is drawn after the lean, so
+  // it is never captured and never cleared.
+  GRect lean_rect = GRect(int_x - 30, block_top - 10,
+                          frac_x + f_sz.w + 30 - (int_x - 30),
+                          num_h + 40);
+  graphics_context_set_fill_color(ctx, family_bg_color());
+  graphics_fill_rect(ctx, lean_rect, 0, GCornerNone);
   graphics_draw_text(ctx, int_buf, font,
                      GRect(int_x, block_top, i_sz.w + 2, num_h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
@@ -239,6 +351,7 @@ static void draw_days_big(GContext *ctx, GRect b) {
   graphics_draw_text(ctx, frac_buf, font,
                      GRect(frac_x, block_top, f_sz.w + 2, num_h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+  lean_pass_numbers(ctx, lean_rect, battery_ink());
   // "days" right-aligned under the number's right edge — it
   // rides the +offset side of the wobble with the fraction.
   // Dark grey (user, v2.8.15) to de-emphasize the unit; red
@@ -319,8 +432,15 @@ static void pct_update_proc(Layer *layer, GContext *ctx) {
   // ink as the days view — this block reads 11 px low at 78 pt.
   int block_top = b.size.h / 2 - (d_sz.h + gap + p_sz.h) / 2 - 15 + 10;  // v2.8.21: -12 optical, +10 down-shift, -3 gap compensation (keeps number at +10)
   int x = (b.size.w - d_sz.w) / 2 + family_wobble_offset;
+  // Lean zone (see draw_days_big): cleared first, number
+  // drawn, leaned, then the % drawn upright over it.
+  GRect lean_rect = GRect(x - 30, block_top - 10, d_sz.w + 60,
+                          d_sz.h + 40);
+  graphics_context_set_fill_color(ctx, family_bg_color());
+  graphics_fill_rect(ctx, lean_rect, 0, GCornerNone);
   graphics_draw_text(ctx, buf, font, GRect(x, block_top, d_sz.w + 2, d_sz.h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+  lean_pass_numbers(ctx, lean_rect, battery_ink());
   // % in dark grey like "days" (user, v2.8.15); red still
   // wins when under a day (moot here — the % view never
   // shows when low — but kept for the same rule).
