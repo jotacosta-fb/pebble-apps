@@ -250,6 +250,13 @@ static void draw_days_big(GContext *ctx, GRect b) {
                      GRect(word_x, block_top + num_h + gap, w_sz.w + 2,
                            w_sz.h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+  // Corner earmarks (user, v2.8.22): the days view returned
+  // early from pct_update_proc, so it never reached that
+  // function's trailing earmarks call — the % view had them
+  // since 2.8.4, the days view never did. Same call, same
+  // light-background gate; no double-draw (days returns
+  // before pct's own call).
+  family_earmarks(ctx, b, family_ink_color(), family_bg_color());
 }
 
 static void pct_update_proc(Layer *layer, GContext *ctx) {
