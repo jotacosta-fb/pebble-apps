@@ -96,12 +96,6 @@
           "targetPlatforms": [
             "emery"
           ]
-        },
-        {
-          "type": "font",
-          "name": "FONT_LECO_42",
-          "file": "fonts/leco1976-pebble.otf",
-          "characterRegex": "[a-z]"
         }
       ]
     },
@@ -119,5 +113,5 @@
       "watchface": false
     }
   },
-  "version": "2.8.16"
+  "version": "2.8.17"
 }
