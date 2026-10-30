@@ -154,45 +154,62 @@ static GFont pct_font_for(GFont df) {
   return s_p34;  // df == s_f68
 }
 
-// ---------- Lean the numbers (user, v2.8.24) ----------
-// _weather's trick, mirrored: the digits are drawn upright as
-// usual, then this pass reads their ink from the framebuffer
-// into a mask, erases it, and writes it back rotated about the
+// ---------- Lean the readout block (user, v2.8.24, v2.8.25) ----------
+// _weather's trick, mirrored: the block is drawn upright as
+// usual, then this pass reads its ink from the framebuffer
+// into masks, erases it, and writes it back rotated about the
 // ink's own center, 2x2 supersampled so the edges stay smooth.
 // _weather leans 5 deg ANTICLOCKWISE; _battery leans 5 deg
 // CLOCKWISE (angle negated), so it differs from _weather — and
-// at 5 deg it reads as a lean, not the face's 20 deg tilt. The
-// unit ("days"/"%") stays upright, like _weather's precip line
-// staying upright under leaning temps. Runs between the digits
-// draw and the unit draw, so the unit is never captured and
-// always paints over any digit ink that dips into its rows.
-// The caller clears the number zone first (_weather v2.1.0
-// lesson — otherwise the previous frame's rotated ink joins
-// the mask and the tilt compounds).
+// at 5 deg it reads as a lean, not the face's 20 deg tilt.
+// v2.8.24 leaned the digits only, unit upright; v2.8.25 (user:
+// "tilt the days and %" too) leans the WHOLE block, digits +
+// dot + unit together. Two inks, so two masks captured in one
+// sweep: digits ink (black, or red when low) and unit ink
+// (dark grey, or red when low — when low both are red, so the
+// unit mask simply stays empty and everything leans as one).
+// A single write-back blends each ink by its own coverage, so
+// the grey unit keeps its grey and no fringe pixel is ever
+// captured twice. The caller clears the block zone first
+// (_weather v2.1.0 lesson — otherwise the previous frame's
+// rotated ink joins the masks and the tilt compounds).
 #define LEAN_NUMBERS_ANG (-(TRIG_MAX_ANGLE * 5 / 360))
-static uint8_t s_lean_mask[(264 * 264 + 7) / 8];
-static int lean_bit(int i) {
-  return (s_lean_mask[i >> 3] >> (i & 7)) & 1;
+#if defined(PBL_COLOR)
+#if defined(PBL_PLATFORM_EMERY)
+#define LEAN_MASK_BYTES ((200 * 228 + 7) / 8)
+#elif defined(PBL_PLATFORM_CHALK)
+#define LEAN_MASK_BYTES ((180 * 180 + 7) / 8)
+#else
+#define LEAN_MASK_BYTES ((144 * 168 + 7) / 8)
+#endif
+static uint8_t s_lean_mask_a[LEAN_MASK_BYTES];
+static uint8_t s_lean_mask_b[LEAN_MASK_BYTES];
+#endif
+static int lean_bit(uint8_t *m, int i) {
+  return (m[i >> 3] >> (i & 7)) & 1;
 }
-static void lean_set(int i, int v) {
-  if (v) s_lean_mask[i >> 3] |= (uint8_t)(1 << (i & 7));
-  else s_lean_mask[i >> 3] &= (uint8_t)~(1 << (i & 7));
+static void lean_set(uint8_t *m, int i, int v) {
+  if (v) m[i >> 3] |= (uint8_t)(1 << (i & 7));
+  else m[i >> 3] &= (uint8_t)~(1 << (i & 7));
 }
-static void lean_pass_numbers(GContext *ctx, GRect rect, GColor ink) {
+static void lean_pass_block(GContext *ctx, GRect rect, GColor ink_digits,
+                            GColor ink_unit) {
 #if defined(PBL_COLOR)
   GBitmap *fb = graphics_capture_frame_buffer(ctx);
   if (!fb) return;
   GRect fbb = gbitmap_get_bounds(fb);
   int W = fbb.size.w, H = fbb.size.h;
-  if ((W * H + 7) / 8 > (int)sizeof(s_lean_mask)) {
+  if ((W * H + 7) / 8 > (int)sizeof(s_lean_mask_a)) {
     graphics_release_frame_buffer(ctx, fb);
     return;
   }
   uint8_t bg = family_bg_color().argb;
-  uint8_t ink_argb = ink.argb;
+  uint8_t a_argb = ink_digits.argb;
+  uint8_t b_argb = ink_unit.argb;
   int x0 = rect.origin.x, y0 = rect.origin.y;
   int x1 = x0 + rect.size.w - 1, y1 = y0 + rect.size.h - 1;
-  memset(s_lean_mask, 0, (W * H + 7) / 8);
+  memset(s_lean_mask_a, 0, (W * H + 7) / 8);
+  memset(s_lean_mask_b, 0, (W * H + 7) / 8);
   int ix0 = W, iy0 = H, ix1 = -1, iy1 = -1;
   for (int y = y0; y <= y1 && y < H; y++) {
     if (y < 0) continue;
@@ -201,9 +218,13 @@ static void lean_pass_numbers(GContext *ctx, GRect rect, GColor ink) {
     int rx1 = x1 < row.max_x ? x1 : row.max_x;
     for (int x = rx0; x <= rx1; x++) {
       if (x < 0) continue;
-      if (row.data[x] == bg) continue;
+      uint8_t px = row.data[x];
+      if (px == bg) continue;
       int i = y * W + x;
-      s_lean_mask[i >> 3] |= (uint8_t)(1 << (i & 7));
+      if (px == a_argb) lean_set(s_lean_mask_a, i, 1);
+      else if (px == b_argb && b_argb != a_argb)
+        lean_set(s_lean_mask_b, i, 1);
+      else continue;  // not block ink (should not happen in the rect)
       row.data[x] = bg;
       if (x < ix0) ix0 = x;
       if (x > ix1) ix1 = x;
@@ -215,16 +236,17 @@ static void lean_pass_numbers(GContext *ctx, GRect rect, GColor ink) {
     graphics_release_frame_buffer(ctx, fb);
     return;
   }
-  int cx16 = (ix0 + ix1) << 15;  // ink center * 65536
+  int cx16 = (ix0 + ix1) << 15;  // block ink center * 65536
   int cy16 = (iy0 + iy1) << 15;
   int iw = ix1 - ix0 + 1, ih = iy1 - iy0 + 1;
   int rad = family_isqrt(iw * iw + ih * ih) / 2 + 2;
   // Clockwise: _weather's anticlockwise form with a negated angle.
   int32_t cs = cos_lookup(LEAN_NUMBERS_ANG);
   int32_t sn = sin_lookup(LEAN_NUMBERS_ANG);
-  uint8_t lut[5];
+  uint8_t lut_a[5], lut_b[5];
   for (int cov = 0; cov <= 4; cov++) {
-    lut[cov] = family_blend(ink_argb, bg, cov);
+    lut_a[cov] = family_blend(a_argb, bg, cov);
+    lut_b[cov] = family_blend(b_argb, bg, cov);
   }
   int dy0 = (cy16 >> 16) - rad;
   if (dy0 < 0) dy0 = 0;
@@ -237,7 +259,7 @@ static void lean_pass_numbers(GContext *ctx, GRect rect, GColor ink) {
     int dx1 = (cx16 >> 16) + rad;
     if (dx1 > row.max_x) dx1 = row.max_x;
     for (int x = dx0; x <= dx1; x++) {
-      int cov = 0;
+      int cov_a = 0, cov_b = 0;
       for (int s2 = 0; s2 < 4; s2++) {
         int32_t ox = (s2 & 1) ? 16384 : -16384;  // +/- 0.25 px
         int32_t oy = (s2 & 2) ? 16384 : -16384;
@@ -247,14 +269,42 @@ static void lean_pass_numbers(GContext *ctx, GRect rect, GColor ink) {
         int py = (int)((cy16 + ((ddx * sn + ddy * cs) >> 16)) >> 16);
         if (px >= 0 && py >= 0 && px < W && py < H) {
           int i = py * W + px;
-          cov += (s_lean_mask[i >> 3] >> (i & 7)) & 1;
+          cov_a += lean_bit(s_lean_mask_a, i);
+          cov_b += lean_bit(s_lean_mask_b, i);
         }
       }
-      if (cov) row.data[x] = lut[cov];
+      if (cov_a >= cov_b && cov_a > 0) row.data[x] = lut_a[cov_a];
+      else if (cov_b > 0) row.data[x] = lut_b[cov_b];
     }
   }
   graphics_release_frame_buffer(ctx, fb);
 #endif
+}
+
+// One font size down the app's size ladder (user, v2.8.25):
+// the decimal part of the days number uses this, so "4.2"
+// reads with a smaller ".2". Follows the downgrade ladder,
+// not the sorted size list (72 is the non-emery start, so
+// chalk's step from 72 is 68, like its downgrade).
+static GFont frac_font_for(GFont df) {
+  if (df == s_f83) return s_f68;
+  if (df == s_f72) return s_f68;
+  if (df == s_f68) return s_f56;
+  if (df == s_f56) return s_f48;
+  if (df == s_f48) return s_f40;
+  return s_f40;  // df == s_f40, already the smallest
+}
+
+// Point size of a LECO digit font, for the decimal baseline
+// shift (smaller fonts sit higher at the same rect top, so the
+// frac rect moves down to keep both parts on one baseline).
+static int digit_font_pt(GFont df) {
+  if (df == s_f83) return 83;
+  if (df == s_f72) return 72;
+  if (df == s_f68) return 68;
+  if (df == s_f56) return 56;
+  if (df == s_f48) return 48;
+  return 40;
 }
 
 // The main readout (v2.5.0, user: simplify): no % — the big
@@ -288,7 +338,8 @@ static void draw_days_big(GContext *ctx, GRect b) {
   GSize i_sz = graphics_text_layout_get_content_size(
       int_buf, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
   GSize f_sz = graphics_text_layout_get_content_size(
-      frac_buf, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
+      frac_buf, frac_font_for(font), measure, GTextOverflowModeFill,
+      GTextAlignmentLeft);
   GSize w_sz = graphics_text_layout_get_content_size(
       "days", word_font, measure, GTextOverflowModeFill,
       GTextAlignmentLeft);
@@ -305,7 +356,8 @@ static void draw_days_big(GContext *ctx, GRect b) {
     i_sz = graphics_text_layout_get_content_size(
         int_buf, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
     f_sz = graphics_text_layout_get_content_size(
-        frac_buf, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
+        frac_buf, frac_font_for(font), measure, GTextOverflowModeFill,
+        GTextAlignmentLeft);
     dot = i_sz.h / 5;
     if (dot < 8) dot = 8;
   }
@@ -314,7 +366,8 @@ static void draw_days_big(GContext *ctx, GRect b) {
     i_sz = graphics_text_layout_get_content_size(
         int_buf, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
     f_sz = graphics_text_layout_get_content_size(
-        frac_buf, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
+        frac_buf, frac_font_for(font), measure, GTextOverflowModeFill,
+        GTextAlignmentLeft);
     dot = i_sz.h / 5;
     if (dot < 8) dot = 8;
   }
@@ -332,13 +385,26 @@ static void draw_days_big(GContext *ctx, GRect b) {
   int int_x = base - family_wobble_offset;
   int dot_x = base + i_sz.w + dot_gap;
   int frac_x = dot_x + dot + dot_gap + family_wobble_offset;
-  // Lean zone: the number's own rect, generously expanded for
-  // the wobble offsets and the lean sweep. Cleared first (see
-  // the lean note above); the unit is drawn after the lean, so
-  // it is never captured and never cleared.
+  // Lean zone: the whole block (digits + dot + unit),
+  // generously expanded for the wobble offsets and the lean
+  // sweep. Cleared first (see the lean note above); the block
+  // is drawn upright, then leaned as one piece.
   GRect lean_rect = GRect(int_x - 30, block_top - 10,
                           frac_x + f_sz.w + 30 - (int_x - 30),
-                          num_h + 40);
+                          num_h + gap + w_sz.h + 40);
+  // Decimal part one font size down (user, v2.8.25): the frac
+  // uses the next size down the ladder. Smaller fonts sit
+  // higher at the same rect top, so the frac rect moves down
+  // to keep both parts on one baseline in the LEANED view:
+  // 3/5 px per pt of step — the upright metric shift minus
+  // the lean's own differential (clockwise drops the right
+  // side, where the frac sits). Tuned on the 83/68 pair:
+  // clean-zone measurement (the dot contaminated earlier
+  // readings) puts the zero at shift ~9.25, so 9 lands the
+  // leaned bottoms within 1 px. Other pairs scale with the
+  // point step.
+  GFont frac_font = frac_font_for(font);
+  int frac_shift = (digit_font_pt(font) - digit_font_pt(frac_font)) * 3 / 5;
   graphics_context_set_fill_color(ctx, family_bg_color());
   graphics_fill_rect(ctx, lean_rect, 0, GCornerNone);
   graphics_draw_text(ctx, int_buf, font,
@@ -348,10 +414,10 @@ static void draw_days_big(GContext *ctx, GRect b) {
   graphics_fill_rect(ctx,
                      GRect(dot_x, block_top + i_sz.h - dot, dot, dot), 0,
                      GCornerNone);
-  graphics_draw_text(ctx, frac_buf, font,
-                     GRect(frac_x, block_top, f_sz.w + 2, num_h),
+  graphics_draw_text(ctx, frac_buf, frac_font,
+                     GRect(frac_x, block_top + frac_shift, f_sz.w + 2,
+                           f_sz.h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
-  lean_pass_numbers(ctx, lean_rect, battery_ink());
   // "days" right-aligned under the number's right edge — it
   // rides the +offset side of the wobble with the fraction.
   // Dark grey (user, v2.8.15) to de-emphasize the unit; red
@@ -363,6 +429,9 @@ static void draw_days_big(GContext *ctx, GRect b) {
                      GRect(word_x, block_top + num_h + gap, w_sz.w + 2,
                            w_sz.h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+  // Whole block leans together (user, v2.8.25).
+  lean_pass_block(ctx, lean_rect, battery_ink(),
+                  battery_is_low() ? battery_ink() : GColorDarkGray);
 }
 
 static void pct_update_proc(Layer *layer, GContext *ctx) {
@@ -432,15 +501,14 @@ static void pct_update_proc(Layer *layer, GContext *ctx) {
   // ink as the days view — this block reads 11 px low at 78 pt.
   int block_top = b.size.h / 2 - (d_sz.h + gap + p_sz.h) / 2 - 15 + 10;  // v2.8.21: -12 optical, +10 down-shift, -3 gap compensation (keeps number at +10)
   int x = (b.size.w - d_sz.w) / 2 + family_wobble_offset;
-  // Lean zone (see draw_days_big): cleared first, number
-  // drawn, leaned, then the % drawn upright over it.
+  // Lean zone (see draw_days_big): the whole block
+  // (number + %), cleared first, drawn upright, leaned as one.
   GRect lean_rect = GRect(x - 30, block_top - 10, d_sz.w + 60,
-                          d_sz.h + 40);
+                          d_sz.h + gap + p_sz.h + 40);
   graphics_context_set_fill_color(ctx, family_bg_color());
   graphics_fill_rect(ctx, lean_rect, 0, GCornerNone);
   graphics_draw_text(ctx, buf, font, GRect(x, block_top, d_sz.w + 2, d_sz.h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
-  lean_pass_numbers(ctx, lean_rect, battery_ink());
   // % in dark grey like "days" (user, v2.8.15); red still
   // wins when under a day (moot here — the % view never
   // shows when low — but kept for the same rule).
@@ -451,6 +519,9 @@ static void pct_update_proc(Layer *layer, GContext *ctx) {
                      GRect(pct_x, block_top + d_sz.h + gap, p_sz.w + 2,
                            p_sz.h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
+  // Whole block leans together (user, v2.8.25).
+  lean_pass_block(ctx, lean_rect, battery_ink(),
+                  battery_is_low() ? battery_ink() : GColorDarkGray);
 
 }
 
