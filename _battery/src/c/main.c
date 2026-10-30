@@ -250,13 +250,6 @@ static void draw_days_big(GContext *ctx, GRect b) {
                      GRect(word_x, block_top + num_h + gap, w_sz.w + 2,
                            w_sz.h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
-  // Corner earmarks (user, v2.8.22): the days view returned
-  // early from pct_update_proc, so it never reached that
-  // function's trailing earmarks call — the % view had them
-  // since 2.8.4, the days view never did. Same call, same
-  // light-background gate; no double-draw (days returns
-  // before pct's own call).
-  family_earmarks(ctx, b, family_ink_color(), family_bg_color());
 }
 
 static void pct_update_proc(Layer *layer, GContext *ctx) {
@@ -267,6 +260,14 @@ static void pct_update_proc(Layer *layer, GContext *ctx) {
   // Header layout (v2.8.12): small battery glyph up top,
   // digits centered on a plain background.
   draw_battery_header(ctx, b);
+
+  // Corner paint (user, v2.8.23): the shared family marks,
+  // light backgrounds only, nothing to do with Quiet Time —
+  // painted here, before all branches, so the days, % and
+  // "--" states all paint corners like _watchface and
+  // _weather do. (2.8.22 had put the call at the end of the
+  // days and % paths only.)
+  family_earmarks(ctx, b, family_ink_color(), family_bg_color());
 
   if (s_pct < 0) {
     GFont f = s_f48;
@@ -330,11 +331,6 @@ static void pct_update_proc(Layer *layer, GContext *ctx) {
                      GRect(pct_x, block_top + d_sz.h + gap, p_sz.w + 2,
                            p_sz.h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
-  // Corner earmarks (user): the shared family marks — light
-  // backgrounds only, nothing to do with Quiet Time.
-  // drawn last in this full-screen layer.
-  family_earmarks(ctx, layer_get_bounds(layer), family_ink_color(),
-                     family_bg_color());
 
 }
 
