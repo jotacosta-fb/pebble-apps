@@ -81,24 +81,6 @@
         },
         {
           "type": "font",
-          "name": "FONT_LECO_78",
-          "file": "fonts/leco1976-pebble.otf",
-          "characterRegex": "[0-9]",
-          "targetPlatforms": [
-            "emery"
-          ]
-        },
-        {
-          "type": "font",
-          "name": "FONT_PCT_39",
-          "file": "fonts/leco1976-pebble.otf",
-          "characterRegex": "[%]",
-          "targetPlatforms": [
-            "emery"
-          ]
-        },
-        {
-          "type": "font",
           "name": "FONT_LECO_83",
           "file": "fonts/leco1976-pebble.otf",
           "characterRegex": "[0-9]",
@@ -108,12 +90,9 @@
         },
         {
           "type": "font",
-          "name": "FONT_PCT_42",
+          "name": "FONT_PCT_32",
           "file": "fonts/leco1976-pebble.otf",
-          "characterRegex": "[%]",
-          "targetPlatforms": [
-            "emery"
-          ]
+          "characterRegex": "[%]"
         }
       ]
     },
@@ -131,5 +110,5 @@
       "watchface": false
     }
   },
-  "version": "2.8.20"
+  "version": "2.8.21"
 }

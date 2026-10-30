@@ -32,8 +32,8 @@
 static Window *s_window;
 
 
-static GFont s_f83, s_f78, s_f72, s_f68, s_f48, s_f56, s_f40;  // LECO 1976 (custom font)
-static GFont s_p42, s_p39, s_p36, s_p34, s_p28, s_p24, s_p20;  // LECO 1976 %-only fonts at HALF the digit heights (user: full size was too large)
+static GFont s_f83, s_f72, s_f68, s_f48, s_f56, s_f40;  // LECO 1976 (custom font)
+static GFont s_p32, s_p36, s_p34, s_p28, s_p24, s_p20;  // LECO 1976 %-only fonts at HALF the digit heights (user: full size was too large)
 static Layer *s_pct_layer;
 // Appear wobble is the family engine (shared/family.h):
 // the two-line readout wobbles as a unit — the days number
@@ -72,7 +72,8 @@ static void tick_handler(struct tm *tick_time, TimeUnits units) {
 // generated for every platform, but builds fine restricted
 // to emery — the same pattern _weather already uses for
 // its 78/80. Small screens stay at 72: 77 would render
-// '0' at ~260 px and break the build there.
+// '0' at ~260 px and break the build there. (78/39 retired
+// in v2.8.21: the 83 ladder skips them, so they were dead.)
 // Other platforms never touch the emery-only resources:
 // the load below is guarded by #if defined(PBL_PLATFORM_EMERY),
 // the same guard _weather uses for its emery-only fonts.
@@ -139,10 +140,13 @@ static void draw_battery_header(GContext *ctx, GRect b) {
 // ---------- Big % (drawn: LECO 1976 digits + Gothic % for style) ----
 
 // The %-only companion for a digit font: half its height (the
-// full-size % read too large). At half size it fits every budget.
+// full-size % read too large) — except on emery, where the
+// user wants it at the "days" word's 22 px ink (PCT 32).
 static GFont pct_font_for(GFont df) {
-  if (df == s_f83) return s_p42;
-  if (df == s_f78) return s_p39;
+  // v2.8.21 (user): % matches the "days" word at 22 px ink
+  // (PCT 32, 22.4 px by the font file), not half the digit
+  // height — 42 read 29 px and the two units disagreed.
+  if (df == s_f83) return s_p32;
   if (df == s_f72) return s_p36;
   if (df == s_f56) return s_p28;
   if (df == s_f48) return s_p24;
@@ -217,7 +221,7 @@ static void draw_days_big(GContext *ctx, GRect b) {
   // Optical centering (emulator-measured): LECO ink sits
   // low in its line box, so the line-height-centered block
   // reads 13 px low at 78 pt — lift it so the ink centers.
-  int block_top = b.size.h / 2 - (num_h + gap + w_sz.h) / 2 - 14;  // v2.8.20: re-tuned for 83 pt
+  int block_top = b.size.h / 2 - (num_h + gap + w_sz.h) / 2 - 14 + 10;  // v2.8.21: block 10 px down (user), header stays
   // The wobble splits the number around the dot (user, v2.6.0):
   // the left side slides left, the right side slides right, the
   // dot itself stays exactly in place.
@@ -302,10 +306,10 @@ static void pct_update_proc(Layer *layer, GContext *ctx) {
         "%", pct_font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
   }
 
-  int gap = -8;  // v2.8.20: PCT 42 ink offset; -8 keeps 5 px ink-to-ink
+  int gap = -4;  // v2.8.21: box gap also moves block_top (it sits inside block_h), so the sign runs opposite to intuition — -4 here, not -12
   // Optical centering (emulator-measured): same low LECO
   // ink as the days view — this block reads 11 px low at 78 pt.
-  int block_top = b.size.h / 2 - (d_sz.h + gap + p_sz.h) / 2 - 12;  // v2.8.20: re-tuned for 83/42
+  int block_top = b.size.h / 2 - (d_sz.h + gap + p_sz.h) / 2 - 15 + 10;  // v2.8.21: -12 optical, +10 down-shift, -3 gap compensation (keeps number at +10)
   int x = (b.size.w - d_sz.w) / 2 + family_wobble_offset;
   graphics_draw_text(ctx, buf, font, GRect(x, block_top, d_sz.w + 2, d_sz.h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
@@ -522,10 +526,8 @@ static void init(void) {
   s_f72 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_72));
 #if defined(PBL_PLATFORM_EMERY)
   s_f83 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_83));
-  s_p42 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_PCT_42));
-  s_f78 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_78));
-  s_p39 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_PCT_39));
 #endif
+  s_p32 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_PCT_32));
   s_f68 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_68));
   s_f48 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_48));
   s_f56 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_56));
@@ -555,10 +557,8 @@ static void deinit(void) {
   fonts_unload_custom_font(s_f72);
 #if defined(PBL_PLATFORM_EMERY)
   fonts_unload_custom_font(s_f83);
-  fonts_unload_custom_font(s_p42);
-  fonts_unload_custom_font(s_f78);
-  fonts_unload_custom_font(s_p39);
 #endif
+  fonts_unload_custom_font(s_p32);
   fonts_unload_custom_font(s_f68);
   fonts_unload_custom_font(s_f48);
   fonts_unload_custom_font(s_f56);
