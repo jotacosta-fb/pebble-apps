@@ -32,14 +32,15 @@
 static Window *s_window;
 
 
-static GFont s_f68, s_f48, s_f56, s_f40;  // LECO 1976 (custom font)
-static GFont s_p34, s_p28, s_p24, s_p20;  // LECO 1976 %-only fonts at HALF the digit heights (user: full size was too large)
+static GFont s_f72, s_f68, s_f48, s_f56, s_f40;  // LECO 1976 (custom font)
+static GFont s_p36, s_p34, s_p28, s_p24, s_p20;  // LECO 1976 %-only fonts at HALF the digit heights (user: full size was too large)
 static Layer *s_pct_layer;
-// Appear wobble is the family engine (shared/family.h): the
-// readout splits around its decimal dot — left side slides
-// left, right side slides right, dot stays (v2.6.0). While
-// charging there is no dot, so the % readout keeps the plain
-// sideways wobble. The battery body never moves.
+// Appear wobble is the family engine (shared/family.h):
+// the two-line readout wobbles as a unit — the days number
+// splits around its decimal dot (left slides left, right
+// slides right, dot stays, v2.6.0) with "days" riding the
+// right side; the % view has no dot, so it keeps the plain
+// sideways wobble. The header icon never moves.
 static Layer *s_days_layer;
 
 static int s_pct = -1;         // -1 = no reading yet
@@ -68,6 +69,21 @@ static void tick_handler(struct tm *tick_time, TimeUnits units) {
 
 // ---------- Battery icon ----------
 
+// Color rule (v2.8.13, user): minimize color — the app is
+// monochrome until under a day of usage is left, then ALL
+// fonts and the icon go red. No green anywhere, charging
+// included; only a learned rate can claim "under a day".
+static bool battery_is_low(void) {
+  return !s_charging && s_rate_x10 > 0 && s_days_x10 >= 0 &&
+         s_days_x10 < 10;
+}
+
+static GColor battery_ink(void) {
+  return battery_is_low()
+      ? PBL_IF_COLOR_ELSE(GColorRed, family_ink_color())
+      : family_ink_color();
+}
+
 // v2.8.12 (user): the battery is no longer a big background
 // behind the digits — it is a small header glyph at the top,
 // centered, with the same proportional fill and color rules.
@@ -85,34 +101,21 @@ static void draw_battery_header(GContext *ctx, GRect b) {
   int x = (b.size.w - total_w) / 2;
   int y = b.size.h * 6 / 100;  // same top margin as _weather's header
 
-  // Outline + terminal nub
-  graphics_context_set_stroke_color(ctx, family_ink_color());
+  // Outline + terminal nub — red only when under a day.
+  graphics_context_set_stroke_color(ctx, battery_ink());
   graphics_context_set_stroke_width(ctx, sw);
   graphics_draw_rect(ctx, GRect(x, y, bw, bh));
-  graphics_context_set_fill_color(ctx, family_ink_color());
+  graphics_context_set_fill_color(ctx, battery_ink());
   graphics_fill_rect(ctx, GRect(x + bw + 2, y + (bh - nub_h) / 2, nub_w, nub_h),
                      0, GCornerNone);
 
-  // Fill level, inset from the outline
+  // Fill level, inset from the outline — monochrome ink
+  // normally, red when under a day (same rule as the fonts).
   if (s_pct > 0) {
     int inner_w = bw - 2 * sw - 4;
     int fill_w = inner_w * s_pct / 100;
     if (fill_w < 2) fill_w = 2;
-#ifdef PBL_COLOR
-    // Red alert when less than a day is left (charging stays
-    // green; only a learned rate can claim this — v2.8.3).
-    bool low = !s_charging && s_rate_x10 > 0 && s_days_x10 >= 0 &&
-               s_days_x10 < 10;
-    // At night the fills go darker (user's night mode).
-    graphics_context_set_fill_color(
-        ctx, low ? GColorRed
-                 : (s_charging
-                        ? (family_night ? GColorIslamicGreen : GColorMintGreen)
-                        : (family_night ? GColorDarkGreen : GColorScreaminGreen)));
-#else
-    graphics_context_set_fill_color(ctx,
-                                    family_night ? GColorDarkGray : GColorLightGray);
-#endif
+    graphics_context_set_fill_color(ctx, battery_ink());
     graphics_fill_rect(ctx,
         GRect(x + sw + 2, y + sw + 2, fill_w, bh - 2 * sw - 4),
         0, GCornerNone);
@@ -124,6 +127,7 @@ static void draw_battery_header(GContext *ctx, GRect b) {
 // The %-only companion for a digit font: half its height (the
 // full-size % read too large). At half size it fits every budget.
 static GFont pct_font_for(GFont df) {
+  if (df == s_f72) return s_p36;
   if (df == s_f56) return s_p28;
   if (df == s_f48) return s_p24;
   if (df == s_f40) return s_p20;
@@ -140,21 +144,22 @@ static GFont pct_font_for(GFont df) {
 // dressed as a measurement).
 static void draw_days_big(GContext *ctx, GRect b) {
   bool big = b.size.w >= 180;
-  int box_y = b.size.h / 2 - (big ? 44 : 31);
-  int box_h = big ? 78 : 54;
   if (s_days_x10 < 0) {
     graphics_draw_text(ctx, "--", s_f48,
-                       GRect(family_wobble_offset, box_y, b.size.w, box_h),
+                       GRect(family_wobble_offset, 0, b.size.w, b.size.h),
                        GTextOverflowModeFill, GTextAlignmentCenter, NULL);
     return;
   }
   char int_buf[8], frac_buf[8];
   snprintf(int_buf, sizeof(int_buf), "%d", s_days_x10 / 10);
   snprintf(frac_buf, sizeof(frac_buf), "%d", s_days_x10 % 10);
-  GFont font = big ? s_f68 : s_f48;
+  // Two-line readout (v2.8.13, user): the number on its own
+  // line, bigger (72 on emery), with "days" right-aligned
+  // beneath it, flush with the number's right edge.
+  GFont font = big ? s_f72 : s_f48;
   GFont word_font = fonts_get_system_font(
       big ? FONT_KEY_GOTHIC_28_BOLD : FONT_KEY_GOTHIC_24_BOLD);
-  GRect measure = GRect(0, 0, 300, box_h);
+  GRect measure = GRect(0, 0, 300, 200);
   GSize i_sz = graphics_text_layout_get_content_size(
       int_buf, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
   GSize f_sz = graphics_text_layout_get_content_size(
@@ -168,8 +173,18 @@ static void draw_days_big(GContext *ctx, GRect b) {
   int dot = i_sz.h / 5;
   if (dot < 8) dot = 8;
   int dot_gap = 3;
-  if (i_sz.w + dot_gap + dot + dot_gap + f_sz.w + 6 + w_sz.w >
-      b.size.w - 6) {
+  // Downgrade the number until it fits its own line (the unit
+  // is always narrower, so it never governs the width).
+  if (i_sz.w + dot_gap + dot + dot_gap + f_sz.w > b.size.w - 6) {
+    font = big ? s_f68 : s_f40;
+    i_sz = graphics_text_layout_get_content_size(
+        int_buf, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
+    f_sz = graphics_text_layout_get_content_size(
+        frac_buf, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
+    dot = i_sz.h / 5;
+    if (dot < 8) dot = 8;
+  }
+  if (i_sz.w + dot_gap + dot + dot_gap + f_sz.w > b.size.w - 6) {
     font = big ? s_f56 : s_f40;
     i_sz = graphics_text_layout_get_content_size(
         int_buf, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
@@ -178,37 +193,43 @@ static void draw_days_big(GContext *ctx, GRect b) {
     dot = i_sz.h / 5;
     if (dot < 8) dot = 8;
   }
-  int total = i_sz.w + dot_gap + dot + dot_gap + f_sz.w + 6 + w_sz.w;
-  // The wobble splits the readout around the dot (user, v2.6.0):
+  int num_w = i_sz.w + dot_gap + dot + dot_gap + f_sz.w;
+  int num_h = i_sz.h;
+  int gap = 4;
+  // Optical centering (emulator-measured): LECO ink sits
+  // low in its line box, so the line-height-centered block
+  // reads 12 px low — lift it so the ink centers on screen.
+  int block_top = b.size.h / 2 - (num_h + gap + w_sz.h) / 2 - 12;
+  // The wobble splits the number around the dot (user, v2.6.0):
   // the left side slides left, the right side slides right, the
   // dot itself stays exactly in place.
-  int base = (b.size.w - total) / 2;
+  int base = (b.size.w - num_w) / 2;
   int int_x = base - family_wobble_offset;
   int dot_x = base + i_sz.w + dot_gap;
   int frac_x = dot_x + dot + dot_gap + family_wobble_offset;
   graphics_draw_text(ctx, int_buf, font,
-                     GRect(int_x, box_y, i_sz.w + 2, box_h),
+                     GRect(int_x, block_top, i_sz.w + 2, num_h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
-  graphics_context_set_fill_color(ctx, family_ink_color());
+  graphics_context_set_fill_color(ctx, battery_ink());
   graphics_fill_rect(ctx,
-                     GRect(dot_x, box_y + i_sz.h - dot, dot, dot), 0,
+                     GRect(dot_x, block_top + i_sz.h - dot, dot, dot), 0,
                      GCornerNone);
   graphics_draw_text(ctx, frac_buf, font,
-                     GRect(frac_x, box_y, f_sz.w + 2, box_h),
+                     GRect(frac_x, block_top, f_sz.w + 2, num_h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
-  // "days" bottom-aligned with the digits, where the % used to sit.
-  int word_y = box_y + i_sz.h - w_sz.h;
-  if (word_y < box_y) word_y = box_y;
+  // "days" right-aligned under the number's right edge — it
+  // rides the +offset side of the wobble with the fraction.
+  int word_x = frac_x + f_sz.w - w_sz.w;
   graphics_draw_text(ctx, "days", word_font,
-                     GRect(frac_x + f_sz.w + 6, word_y, w_sz.w + 2,
-                           box_h),
+                     GRect(word_x, block_top + num_h + gap, w_sz.w + 2,
+                           w_sz.h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
 }
 
 static void pct_update_proc(Layer *layer, GContext *ctx) {
   GRect b = layer_get_bounds(layer);
   bool big = b.size.w >= 180;
-  graphics_context_set_text_color(ctx, family_ink_color());
+  graphics_context_set_text_color(ctx, battery_ink());
 
   // Header layout (v2.8.12): small battery glyph up top,
   // digits centered on a plain background.
@@ -227,25 +248,30 @@ static void pct_update_proc(Layer *layer, GContext *ctx) {
     return;
   }
   // Otherwise the % view: while charging, or until a rate is
-  // learned (v2.8.3).
-
-  // Digit box placed so the digits' visual center is the screen's
-  // vertical center (this layer is full-screen now).
-  int box_y = b.size.h / 2 - (big ? 44 : 31);
-  int box_h = big ? 78 : 54;
-
-GFont font = big ? s_f68 : s_f48;
+  // learned (v2.8.3). Two lines like the days view (v2.8.13):
+  // the number on top, bigger (72 on emery), with % right-
+  // aligned beneath it, flush with the number's right edge.
+  // The whole block wobbles as one piece, as before.
+  GFont font = big ? s_f72 : s_f48;
   GFont pct_font = pct_font_for(font);
 
   char buf[8];
   snprintf(buf, sizeof(buf), "%d", s_pct);
-  GRect measure = GRect(0, 0, 300, box_h);
+  GRect measure = GRect(0, 0, 300, 200);
   GSize d_sz = graphics_text_layout_get_content_size(
       buf, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
   GSize p_sz = graphics_text_layout_get_content_size(
       "%", pct_font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
 
-  if (d_sz.w + 4 + p_sz.w > b.size.w - 6) {
+  if (d_sz.w > b.size.w - 6) {
+    font = big ? s_f68 : s_f40;
+    pct_font = pct_font_for(font);
+    d_sz = graphics_text_layout_get_content_size(
+        buf, font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
+    p_sz = graphics_text_layout_get_content_size(
+        "%", pct_font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
+  }
+  if (d_sz.w > b.size.w - 6) {
     font = big ? s_f56 : s_f40;
     pct_font = pct_font_for(font);
     d_sz = graphics_text_layout_get_content_size(
@@ -254,16 +280,17 @@ GFont font = big ? s_f68 : s_f48;
         "%", pct_font, measure, GTextOverflowModeFill, GTextAlignmentLeft);
   }
 
-  int total = d_sz.w + 4 + p_sz.w;
-  int x = (b.size.w - total) / 2 + family_wobble_offset;
-  graphics_draw_text(ctx, buf, font, GRect(x, box_y, d_sz.w + 2, box_h),
+  int gap = 4;
+  // Optical centering (emulator-measured): same low LECO
+  // ink as the days view — this block reads 10 px low.
+  int block_top = b.size.h / 2 - (d_sz.h + gap + p_sz.h) / 2 - 10;
+  int x = (b.size.w - d_sz.w) / 2 + family_wobble_offset;
+  graphics_draw_text(ctx, buf, font, GRect(x, block_top, d_sz.w + 2, d_sz.h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
-  // The %'s box is bottom-aligned with the digits' box so the
-  // baselines land together.
-  int pct_y = box_y + d_sz.h - p_sz.h;
-  if (pct_y < box_y) pct_y = box_y;
+  int pct_x = x + d_sz.w - p_sz.w;
   graphics_draw_text(ctx, "%", pct_font,
-                     GRect(x + d_sz.w + 4, pct_y, p_sz.w + 2, box_h),
+                     GRect(pct_x, block_top + d_sz.h + gap, p_sz.w + 2,
+                           p_sz.h),
                      GTextOverflowModeFill, GTextAlignmentLeft, NULL);
   // Corner earmarks (user): the shared family marks — light
   // backgrounds only, nothing to do with Quiet Time.
@@ -346,7 +373,7 @@ static void days_update_proc(Layer *layer, GContext *ctx) {
       FONT_KEY_GOTHIC_28);
 
   if (s_charging) {
-    graphics_context_set_text_color(ctx, family_ink_color());
+    graphics_context_set_text_color(ctx, battery_ink());
     graphics_draw_text(ctx, "charging", font, b,
                        GTextOverflowModeFill, GTextAlignmentCenter, NULL);
     return;
@@ -356,7 +383,7 @@ static void days_update_proc(Layer *layer, GContext *ctx) {
       s_pct >= 0) {
     char pct_buf[8];
     snprintf(pct_buf, sizeof(pct_buf), "%d%%", s_pct);
-    graphics_context_set_text_color(ctx, family_ink_color());
+    graphics_context_set_text_color(ctx, battery_ink());
     graphics_draw_text(ctx, pct_buf, font, b,
                        GTextOverflowModeFill, GTextAlignmentCenter, NULL);
   }
@@ -465,10 +492,12 @@ static void init(void) {
   // the first frame light and only flipped dark when the phone
   // replied.
   family_night_load(PERSIST_NIGHT, PERSIST_SUNRISE, PERSIST_SUNSET);
+  s_f72 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_72));
   s_f68 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_68));
   s_f48 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_48));
   s_f56 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_56));
   s_f40 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_40));
+  s_p36 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_PCT_36));
   s_p34 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_PCT_34));
   s_p28 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_PCT_28));
   s_p24 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_PCT_24));
@@ -490,10 +519,12 @@ static void init(void) {
 
 static void deinit(void) {
   window_destroy(s_window);
+  fonts_unload_custom_font(s_f72);
   fonts_unload_custom_font(s_f68);
   fonts_unload_custom_font(s_f48);
   fonts_unload_custom_font(s_f56);
   fonts_unload_custom_font(s_f40);
+  fonts_unload_custom_font(s_p36);
   fonts_unload_custom_font(s_p34);
   fonts_unload_custom_font(s_p28);
   fonts_unload_custom_font(s_p24);
