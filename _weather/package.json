@@ -21,7 +21,9 @@
       "SUNRISE",
       "SUNSET",
       "FORCE",
-      "PRECIP_HOUR"
+      "PRECIP_HOUR",
+      "LAT",
+      "LON"
     ],
     "resources": {
       "media": [
@@ -179,5 +181,5 @@
       "watchface": false
     }
   },
-  "version": "2.7.25"
+  "version": "2.7.26"
 }

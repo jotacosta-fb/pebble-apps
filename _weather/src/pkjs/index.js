@@ -67,7 +67,9 @@ function fetchFor(lat, lon) {
         'CODE': j.current.weather_code,
         'NIGHT': night,
         'SUNRISE': j.daily.sunrise[0],
-        'SUNSET': j.daily.sunset[0]
+        'SUNSET': j.daily.sunset[0],
+        'LAT': Math.round(lat * 1e6),
+        'LON': Math.round(lon * 1e6)
       }, function () {
         console.log('Weather sent');
       }, function (e) {

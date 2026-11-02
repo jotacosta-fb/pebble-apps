@@ -56,6 +56,8 @@ static int s_days_x10 = -1;    // predicted days left x10
 #define PERSIST_NIGHT 4
 #define PERSIST_SUNRISE 5
 #define PERSIST_SUNSET 6
+#define PERSIST_LAT 9
+#define PERSIST_LON 10
 
 // Night mode is the family engine (shared/family.h): a small
 // JS companion fetches sunrise/sunset from Open-Meteo; the
@@ -552,6 +554,11 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
                                  MESSAGE_KEY_SUNSET, MESSAGE_KEY_NIGHT,
                                  PERSIST_SUNRISE, PERSIST_SUNSET,
                                  PERSIST_NIGHT);
+  // On-watch sun times (family.h): coordinates arrive with the
+  // same reply; from then on colors no longer depend on the
+  // phone's reply.
+  family_place_apply(iter, MESSAGE_KEY_LAT, MESSAGE_KEY_LON,
+                     PERSIST_LAT, PERSIST_LON);
   if (flags & 2) refresh_display();
 }
 
@@ -569,6 +576,7 @@ static void init(void) {
   // the first frame light and only flipped dark when the phone
   // replied.
   family_night_load(PERSIST_NIGHT, PERSIST_SUNRISE, PERSIST_SUNSET);
+  family_place_load(PERSIST_LAT, PERSIST_LON);
   s_f72 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_72));
 #if defined(PBL_PLATFORM_EMERY)
   s_f83 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_83));

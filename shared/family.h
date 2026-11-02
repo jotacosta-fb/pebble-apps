@@ -156,20 +156,111 @@ FAMILY_API static void family_wobble_stop(void) {
 
 // ---------- Day/night engine ----------
 // Shared by _weather and _battery: after sunset the display
-// inverts (black background, white ink). The phone sends
-// SUNRISE/SUNSET epochs (and its own NIGHT verdict) with each
-// fetch; the watch persists them and re-evaluates on a minute
-// tick, so the flip happens on time even with no new message.
-// Persist keys and message keys stay per-app (their own
-// numbering); the app passes them in.
+// inverts (black background, white ink). The watch computes
+// sunrise/sunset itself from persisted coordinates (below) and
+// re-evaluates on a minute tick, so the flip happens on time
+// even with no new message; the phone's SUNRISE/SUNSET epochs
+// (and its own NIGHT verdict) stay as the fallback until
+// coordinates arrive. Persist keys and message keys stay
+// per-app (their own numbering); the app passes them in.
 
 FAMILY_API static bool family_night;
 FAMILY_API static int family_sunrise;  // epoch, 0 = unknown
 FAMILY_API static int family_sunset;   // epoch, 0 = unknown
 
+// ---------- On-watch sun computation (ported from _watchface) ----------
+// The phone sends the location ONCE (LAT/LON, microdegrees,
+// persisted on the watch); from then on the watch computes
+// sunrise and sunset itself, in integer fixed point (NOAA
+// approximation, accurate to a few minutes), once per UTC day.
+// The minute tick only compares the current time against the two
+// stored instants: no radio, no GPS, no phone reply needed for
+// colors. The phone's SUNRISE/SUNSET epochs stay as the fallback
+// until coordinates arrive (family_have_place false).
+FAMILY_API static int family_lat_e6 = 0;
+FAMILY_API static int family_lon_e6 = 0;
+FAMILY_API static bool family_have_place = false;
+FAMILY_API static time_t family_sun_day = -1;
+FAMILY_API static time_t family_sun_rise = 0;
+FAMILY_API static time_t family_sun_set = 0;
+
+// acos for a Q16 cosine via binary search on cos_lookup
+// (monotonic over 0..180 degrees). Returns a TRIGANGLE.
+FAMILY_API static int32_t family_acos_trig(int32_t cos_q16) {
+  int32_t lo = 0, hi = TRIG_MAX_ANGLE / 2;
+  for (int i = 0; i < 18; i++) {
+    int32_t mid = (lo + hi) / 2;
+    if (cos_lookup(mid) > cos_q16) lo = mid; else hi = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+FAMILY_API static void family_sun_recompute(time_t now) {
+  family_sun_day = now - (now % 86400);
+  family_sun_rise = 0;
+  family_sun_set = 0;
+  if (!family_have_place) return;
+  struct tm *tmv = gmtime(&now);
+  int doy = tmv->tm_yday;
+  // Fractional-year angle for the day, sampled at midday.
+  int32_t g = (int32_t)(((int64_t)(2 * doy + 1) * TRIG_MAX_ANGLE) / 730);
+  int32_t sg = sin_lookup(g), cg = cos_lookup(g);
+  int32_t sg2 = sin_lookup(g * 2), cg2 = cos_lookup(g * 2);
+  int32_t sg3 = sin_lookup(g * 3), cg3 = cos_lookup(g * 3);
+  // Equation of time, minutes, Q16. Coefficients are the NOAA
+  // series x 65536; the sum is scaled by 229.18 at the end.
+  int64_t eq_q16 = 5 + ((int64_t)122 * cg >> 16) - ((int64_t)2102 * sg >> 16)
+                     - ((int64_t)958 * cg2 >> 16) - ((int64_t)2677 * sg2 >> 16);
+  eq_q16 = eq_q16 * 22918 / 100;
+  // Solar declination, radians Q16 -> TRIGANGLE (x 65536/2pi).
+  int64_t decl_q16 = 453 - ((int64_t)26207 * cg >> 16)
+                       + ((int64_t)4604 * sg >> 16)
+                       - ((int64_t)443 * cg2 >> 16)
+                       + ((int64_t)59 * sg2 >> 16)
+                       - ((int64_t)177 * cg3 >> 16)
+                       + ((int64_t)97 * sg3 >> 16);
+  int32_t decl = (int32_t)((decl_q16 * 10430) >> 16);
+  int32_t lat = (int32_t)(((int64_t)family_lat_e6 * TRIG_MAX_ANGLE) / 360000000);
+  int32_t cos_lat = cos_lookup(lat), sin_lat = sin_lookup(lat);
+  int32_t cos_decl = cos_lookup(decl), sin_decl = sin_lookup(decl);
+  int64_t tan_lat = ((int64_t)sin_lat << 16) / cos_lat;
+  int64_t tan_decl = ((int64_t)sin_decl << 16) / cos_decl;
+  int32_t cos_zen = cos_lookup(
+      (int32_t)(((int64_t)TRIG_MAX_ANGLE * 90833) / 360000));
+  // cos(H) = cos(zenith)/(cos lat * cos decl) - tan lat * tan decl
+  int64_t denom = ((int64_t)cos_lat * cos_decl) >> 16;
+  int64_t cos_h = (((int64_t)cos_zen << 16) / denom) -
+                  (((int64_t)(int32_t)tan_lat * (int32_t)tan_decl) >> 16);
+  if (cos_h >= 65536) {          // the sun never rises today
+    family_sun_rise = family_sun_day + 2 * 86400;
+    family_sun_set = family_sun_day - 86400;
+    return;
+  }
+  if (cos_h <= -65536) {         // the sun never sets today
+    family_sun_rise = family_sun_day - 86400;
+    family_sun_set = family_sun_day + 2 * 86400;
+    return;
+  }
+  int32_t h_trig = family_acos_trig((int32_t)cos_h);
+  int64_t h_deg_q16 = (int64_t)h_trig * 360;   // degrees, Q16
+  int64_t lon_deg_q16 = ((int64_t)family_lon_e6 * 65536) / 1000000;
+  int64_t rise_q16 = ((int64_t)720 << 16) - 4 * (lon_deg_q16 + h_deg_q16)
+                     - eq_q16;
+  int64_t set_q16 = ((int64_t)720 << 16) - 4 * (lon_deg_q16 - h_deg_q16)
+                    - eq_q16;
+  family_sun_rise = family_sun_day + (time_t)((rise_q16 * 60) >> 16);
+  family_sun_set = family_sun_day + (time_t)((set_q16 * 60) >> 16);
+}
+
 FAMILY_API static void family_night_eval(void) {
-  if (family_sunrise > 0 && family_sunset > family_sunrise) {
-    time_t now = time(NULL);
+  time_t now = time(NULL);
+  if (family_have_place) {
+    // On-watch sun times (below) outrank the phone's epochs:
+    // they are fresh for the current UTC day no matter when the
+    // phone last answered.
+    if (now - (now % 86400) != family_sun_day) family_sun_recompute(now);
+    family_night = (now < family_sun_rise || now >= family_sun_set);
+  } else if (family_sunrise > 0 && family_sunset > family_sunrise) {
     family_night = (now < family_sunrise || now >= family_sunset);
   }
 }
@@ -231,6 +322,41 @@ FAMILY_API static int family_night_apply(DictionaryIterator *iter,
     flags |= 2;
   }
   return flags;
+}
+
+// Restore persisted coordinates at init — call AFTER
+// family_night_load, so the re-evaluation below already uses the
+// computed pair for the first frame.
+FAMILY_API static void family_place_load(int pk_lat, int pk_lon) {
+  if (persist_exists(pk_lat) && persist_exists(pk_lon)) {
+    family_lat_e6 = persist_read_int(pk_lat);
+    family_lon_e6 = persist_read_int(pk_lon);
+    family_have_place = family_lat_e6 >= -90000000 && family_lat_e6 <= 90000000 &&
+                        family_lon_e6 >= -180000000 && family_lon_e6 <= 180000000;
+    if (family_have_place) family_night_eval();
+  }
+}
+
+// Apply an incoming message's LAT/LON tuples: stored, persisted,
+// and the night state re-evaluated at once so the next refresh
+// already uses the computed pair. Returns 1 when coordinates
+// were updated.
+FAMILY_API static int family_place_apply(DictionaryIterator *iter,
+                                          int mk_lat, int mk_lon,
+                                          int pk_lat, int pk_lon) {
+  Tuple *t_lat = dict_find(iter, mk_lat);
+  Tuple *t_lon = dict_find(iter, mk_lon);
+  if (t_lat && t_lon) {
+    family_lat_e6 = (int)t_lat->value->int32;
+    family_lon_e6 = (int)t_lon->value->int32;
+    persist_write_int(pk_lat, family_lat_e6);
+    persist_write_int(pk_lon, family_lon_e6);
+    family_have_place = family_lat_e6 >= -90000000 && family_lat_e6 <= 90000000 &&
+                        family_lon_e6 >= -180000000 && family_lon_e6 <= 180000000;
+    family_night_eval();
+    return 1;
+  }
+  return 0;
 }
 
 // ---------- Corner earmarks ----------

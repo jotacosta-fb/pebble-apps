@@ -72,6 +72,8 @@ static bool s_have_data = false;
 #define PERSIST_SUNSET 8
 #define PERSIST_FETCH_AT 9  // epoch of the last successful fetch
 #define PERSIST_PRECIP_HOUR 10
+#define PERSIST_LAT 11
+#define PERSIST_LON 12
 
 // Night mode is the family engine (shared/family.h): the JS
 // sends sunrise/sunset epochs with each fetch; the watch stores
@@ -552,6 +554,11 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
   family_night_apply(iter, MESSAGE_KEY_SUNRISE, MESSAGE_KEY_SUNSET,
                        MESSAGE_KEY_NIGHT, PERSIST_SUNRISE, PERSIST_SUNSET,
                        PERSIST_NIGHT);
+  // On-watch sun times (family.h): coordinates arrive with the
+  // same fetch; from then on colors no longer depend on the
+  // phone's reply.
+  family_place_apply(iter, MESSAGE_KEY_LAT, MESSAGE_KEY_LON,
+                     PERSIST_LAT, PERSIST_LON);
 
   if (t_max && t_min && t_precip && t_code) {
     s_temp_max = t_max->value->int32;
@@ -729,6 +736,7 @@ static void init(void) {
   s_f56 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_56));
   s_f40 = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_40));
   family_night_load(PERSIST_NIGHT, PERSIST_SUNRISE, PERSIST_SUNSET);
+  family_place_load(PERSIST_LAT, PERSIST_LON);
   if (persist_exists(PERSIST_TEMP_MAX)) {
     s_temp_max = persist_read_int(PERSIST_TEMP_MAX);
     s_temp_min = persist_read_int(PERSIST_TEMP_MIN);
