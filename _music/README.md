@@ -159,6 +159,14 @@ the buttons still control playback, the screen just stays black.
   place, no per-app copies). Select keeps its own tap pulse. The slide
   geometry (family_pop_rect) is unchanged; emulator-verified mid-flight
   Up rect x 194-199, y 14-69, same as 1.1.13.
+- v1.1.15: no middle mark anymore. All three buttons animate the same
+  way (the shared slide at the pressed button's row — Select included,
+  so the tap pulse and its scale code are gone). The paused state now
+  shows as black pause bars centered over the album art, on a topmost
+  transparent layer; nothing shows while playing or when no art is
+  displayed. The half-circle fan moved to shared/family.h as
+  family_half_circle (now _battery's center mark); the emulator-forced
+  overlay preview measures bars x 82-93 / 106-117, y 88-139 on emery.
 - NOT yet built: the Spotify login. It needs a Spotify developer app (client
   ID) plus a small config page doing the PKCE flow; tokens then live in
   PKJS localStorage. The placeholders are `CLIENT_ID` and `CONFIG_URL` at the

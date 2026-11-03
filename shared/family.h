@@ -292,6 +292,28 @@ FAMILY_API static void family_slide_draw(GContext *ctx, GRect bounds,
                      0, GCornerNone);
 }
 
+// ---------- Half-circle mark ----------
+// Filled left semicircle: flat side on the screen edge (x = edge_x),
+// bulge reaching edge_x - r. Arc points come from the integer sqrt, so
+// no trig-angle convention is involved; the polygon's closing edge is
+// the vertical diameter. (graphics_fill_radial was tried first and drew
+// nothing with inset_thickness 0, so this fan replaces it.) Used for a
+// center-button indicator (in _battery: the Select mark). r <= 31 keeps
+// the 64-point buffer safe.
+FAMILY_API static void family_half_circle(GContext *ctx, int edge_x, int cy,
+                                          int r, GColor color) {
+  GPoint points[64];
+  int n = 0;
+  for (int dy = -r; dy <= r; dy++) {
+    points[n++] = GPoint(edge_x - family_isqrt(r * r - dy * dy), cy + dy);
+  }
+  GPathInfo info = { .num_points = n, .points = points };
+  GPath *path = gpath_create(&info);
+  graphics_context_set_fill_color(ctx, color);
+  gpath_draw_filled(ctx, path);
+  gpath_destroy(path);
+}
+
 // ---------- Day/night engine ----------
 // Shared by _weather and _battery: after sunset the display
 // inverts (black background, white ink). The watch computes

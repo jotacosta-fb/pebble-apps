@@ -47,6 +47,7 @@ static int s_pct = -1;         // -1 = no reading yet
 static bool s_charging = false;
 static int s_rate_x10 = 0;     // drain rate in % per day x10, 0 = not learned
 static int s_days_x10 = -1;    // predicted days left x10
+static int s_view_override = -1;  // readout toggle: -1 auto, 0 force %, 1 force days
 
 #define PERSIST_RATE_X10 1
 #define PERSIST_LAST_PCT 2    // now the stretch ANCHOR % (see header)
@@ -314,12 +315,16 @@ static void pct_update_proc(Layer *layer, GContext *ctx) {
   // days and % paths only.)
   family_earmarks(ctx, b, family_ink_color(), family_bg_color());
 
-  // Button slide (family helper): painted here, before all branches, so
-  // the days, % and "--" states all show it like the corners above (the
-  // branches below return early). The rect sits at the screen edge,
-  // where the centered digits never reach, so painting first costs
-  // nothing; red wins when low, like everything else here.
-  family_slide_draw(ctx, b, battery_ink());
+  // Center-button mark (user, 2.8.29): the shared half circle at the
+  // right edge middle, flat side on the screen edge — the Select
+  // indicator. Painted here, before all branches, so the days, % and
+  // "--" states all show it like the corners above (the branches below
+  // return early). It sits at the screen edge, where the centered
+  // digits never reach, so painting first costs nothing; red wins when
+  // low, like everything else here. No activation viz on this app: the
+  // slide is gone from all three buttons.
+  family_half_circle(ctx, b.size.w, b.size.h / 2, b.size.h * 11 / 228,
+                     battery_ink());
 
   if (s_pct < 0) {
     GFont f = s_f48;
@@ -329,7 +334,13 @@ static void pct_update_proc(Layer *layer, GContext *ctx) {
                        GTextAlignmentCenter, NULL);
     return;
   }
-  if (!s_charging && s_rate_x10 > 0) {
+  // Readout toggle (user, 2.8.29): Select flips between the days and %
+  // views. s_view_override -1 = auto (days when a rate is learned and
+  // not charging, else %), 0 = forced %, 1 = forced days. Session-only:
+  // reopening the app returns to auto.
+  bool auto_days = !s_charging && s_rate_x10 > 0;
+  bool show_days = (s_view_override >= 0) ? (s_view_override == 1) : auto_days;
+  if (show_days) {
     draw_days_big(ctx, b);
     return;
   }
@@ -488,35 +499,24 @@ static void battery_handler(BatteryChargeState state) {
   refresh_display();
 }
 
-// The Up slide's finish callback: the exit waits for the 350 ms slide so
-// the feedback stays visible; pressing another button first cancels the
-// exit (the callback only fires on a completed animation).
-static void slide_finished_pop(int button) {
-  if (button == 1) window_stack_pop(true);
-}
-
 static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
   family_idle_arm();
-  family_slide_start(2, s_pct_layer, NULL);
   sample_battery();
+  // Toggle the readout: whichever view is showing, switch to the other.
+  bool auto_days = !s_charging && s_rate_x10 > 0;
+  bool showing_days = (s_view_override >= 0) ? (s_view_override == 1) : auto_days;
+  s_view_override = showing_days ? 0 : 1;
   refresh_display();
 }
 
 static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
-  // Top button returns to the watchface (user request) — via the slide's
-  // finish callback, so the slide plays before the exit.
-  family_slide_start(1, s_pct_layer, slide_finished_pop);
-}
-
-static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
-  family_idle_arm();
-  family_slide_start(3, s_pct_layer, NULL);
+  // Top button returns to the watchface (user request).
+  window_stack_pop(true);
 }
 
 static void click_config_provider(void *context) {
   window_single_click_subscribe(BUTTON_ID_SELECT, select_click_handler);
   window_single_click_subscribe(BUTTON_ID_UP, up_click_handler);
-  window_single_click_subscribe(BUTTON_ID_DOWN, down_click_handler);
 }
 
 // ---------- Window ----------
@@ -567,7 +567,6 @@ static void window_load(Window *window) {
 }
 
 static void window_unload(Window *window) {
-  family_slide_teardown();
   layer_destroy(s_pct_layer);
   layer_destroy(s_days_layer);
 }

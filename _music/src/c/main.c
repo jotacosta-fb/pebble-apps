@@ -20,13 +20,15 @@
 #define FOOTER_H 28
 #define FOOTER_GAP 4
 #define TRACK_MAX 127
-#define ICON_W 14
-#define ICON_H 22
+#define PAUSE_BAR_W 12
+#define PAUSE_BAR_H 52
+#define PAUSE_BAR_GAP 12
 
 static Window *s_window;
 static BitmapLayer *s_art_layer;
 static TextLayer *s_track_layer;
 static Layer *s_chrome_layer;
+static Layer *s_pause_layer;
 static GBitmap *s_bmp;
 static uint8_t *s_art_data;  // owned by s_bmp (from gbitmap_create_blank)
 static int s_art_total_chunks = 0;
@@ -44,55 +46,10 @@ static void send_key(uint32_t key) {
   app_message_outbox_send();
 }
 
-// Tap pulse: the Select mark grows to 1.5x mid-pulse and returns to normal
-// over 350 ms. One Animation object, recreated per tap. Up/Down use the
-// shared family slide instead (see family_slide_start); only Select runs
-// this pulse.
-static Animation *s_button_anim = NULL;
-static int s_anim_button = 0;  // 0 = none, 2 = select pulsing
-static int s_anim_scale_x10 = 10;
-
-static void button_anim_update(Animation *animation, AnimationProgress progress) {
-  // progress 0..ANIMATION_NORMALIZED_MAX maps to a 0..180° sine bump.
-  int32_t theta = (progress * (TRIG_MAX_ANGLE / 2)) / ANIMATION_NORMALIZED_MAX;
-  int32_t sine = sin_lookup(theta);  // 0..TRIG_MAX_RATIO across 0..180°
-  s_anim_scale_x10 = 10 + (5 * sine) / TRIG_MAX_RATIO;
-  if (s_chrome_layer) layer_mark_dirty(s_chrome_layer);
-}
-
-static void button_anim_stopped(Animation *animation, bool finished, void *context) {
-  s_anim_button = 0;
-  s_anim_scale_x10 = 10;
-  if (s_chrome_layer) layer_mark_dirty(s_chrome_layer);
-}
-
-// The AnimationImplementation must be file-scope static const: the animation
-// keeps the pointer.
-static const AnimationImplementation s_button_anim_impl = {
-  .update = button_anim_update,
-};
-static const AnimationHandlers s_button_anim_handlers = {
-  .stopped = button_anim_stopped,
-};
-
-static void start_button_anim(int button) {
-  if (s_button_anim) {
-    animation_unschedule(s_button_anim);
-    animation_destroy(s_button_anim);
-    s_button_anim = NULL;
-  }
-  // Set after the old animation is gone: unschedule may fire its stopped
-  // handler, which resets s_anim_button.
-  s_anim_button = button;
-  s_button_anim = animation_create();
-  animation_set_duration(s_button_anim, 350);
-  animation_set_implementation(s_button_anim, &s_button_anim_impl);
-  animation_set_handlers(s_button_anim, s_button_anim_handlers, NULL);
-  animation_schedule(s_button_anim);
-}
-
 static void select_click(ClickRecognizerRef recognizer, void *context) {
-  start_button_anim(2);
+  // All three buttons animate the same way now: the shared family slide
+  // at the pressed button's row.
+  family_slide_start(2, s_chrome_layer, NULL);
   send_key(MESSAGE_KEY_PLAYPAUSE);
 }
 
@@ -110,47 +67,6 @@ static void click_config(void *context) {
   window_single_click_subscribe(BUTTON_ID_SELECT, select_click);
   window_single_click_subscribe(BUTTON_ID_UP, up_click);
   window_single_click_subscribe(BUTTON_ID_DOWN, down_click);
-}
-
-// Integer square root (floor) for the half-circle arc points.
-static int isqrt_int(int n) {
-  int result = 0;
-  int bit = 1 << 30;
-  while (bit > n) bit >>= 2;
-  while (bit != 0) {
-    if (n >= result + bit) {
-      n -= result + bit;
-      result = (result >> 1) + bit;
-    } else {
-      result >>= 1;
-    }
-    bit >>= 2;
-  }
-  return result;
-}
-
-// Filled left semicircle with center (cx, cy) and radius r. Arc points are
-// computed with the integer sqrt, so no trig-angle convention is involved;
-// the polygon's closing edge is the vertical diameter. (graphics_fill_radial
-// was tried first and drew nothing with inset_thickness 0, so this fan
-// replaces it.)
-static void draw_half_circle(GContext *ctx, int cx, int cy, int r) {
-  GPoint points[64];  // 2r+1 vertices; r is 11 here, so 23
-  int n = 0;
-  for (int dy = -r; dy <= r; dy++) {
-    points[n++] = GPoint(cx - isqrt_int(r * r - dy * dy), cy + dy);
-  }
-  GPathInfo info = { .num_points = n, .points = points };
-  GPath *path = gpath_create(&info);
-  gpath_draw_filled(ctx, path);
-  gpath_destroy(path);
-}
-
-// Scale a rect around a center by scale_x10/10 (position and size).
-static GRect scale_rect(GRect r, GPoint c, int scale_x10) {
-  return GRect(c.x + (r.origin.x - c.x) * scale_x10 / 10,
-               c.y + (r.origin.y - c.y) * scale_x10 / 10,
-               r.size.w * scale_x10 / 10, r.size.h * scale_x10 / 10);
 }
 
 // Official Spotify logo outline (Simple Icons spotify.svg, 24x24 viewBox,
@@ -184,11 +100,10 @@ static void draw_spotify_logo(GContext *ctx) {
   draw_logo_poly(ctx, s_logo_arc_top, ARRAY_LENGTH(s_logo_arc_top), ccx, ccy);
 }
 
-// Middle button mark only, flushed to the very rightmost pixel column and
-// aligned with the physical Select button at 50% of the screen height. The
-// top/bottom symbols are gone (the buttons themselves still work). The mark
-// shows the state from the phone's STATE: pause bars while playing, the half
-// circle while paused — so the paused state is visible at a glance.
+// Chrome: the art frame plus the empty-state logo plus the shared slide.
+// No middle mark anymore: all three buttons animate with the slide, and
+// the paused state shows as black pause bars over the art (see
+// pause_update_proc, topmost layer).
 static void chrome_update_proc(Layer *layer, GContext *ctx) {
   GRect bounds = layer_get_bounds(layer);
   graphics_context_set_fill_color(ctx, GColorBlack);
@@ -201,32 +116,29 @@ static void chrome_update_proc(Layer *layer, GContext *ctx) {
     }
   }
 #endif
-  int ix = bounds.size.w - ICON_W;
-  // rx is the screen edge itself: a polygon edge exactly at x=200 inks column
-  // 199 (a vertex at 199 would leave that column empty under the pixel-square
-  // fill rule), so the mark truly touches the rightmost pixel.
-  int rx = ix + ICON_W;
-  int sel_y = bounds.size.h / 2 - ICON_H / 2;
-  // The pulse scales whichever middle mark is shown around the box center;
-  // for the half circle the flat side stays on the screen edge.
-  int sscale = (s_anim_button == 2) ? s_anim_scale_x10 : 10;
-  if (s_playing) {
-    GPoint mc = GPoint(ix + ICON_W / 2, sel_y + ICON_H / 2);
-    graphics_fill_rect(ctx, scale_rect(GRect(ix + 1, sel_y, 5, ICON_H), mc, sscale), 0, GCornerNone);
-    graphics_fill_rect(ctx, scale_rect(GRect(ix + 9, sel_y, 5, ICON_H), mc, sscale), 0, GCornerNone);
-  } else {
-    draw_half_circle(ctx, rx, sel_y + ICON_H / 2, (ICON_H / 2) * sscale / 10);
-  }
   // Empty state (nothing playing, no art): the grey Spotify logo, centered
-  // where the art goes. It never coexists with the frame, and the mark sits
-  // outside the disc.
+  // where the art goes. It never coexists with the frame.
   if (!s_art_seen) draw_spotify_logo(ctx);
-  // Up/Down press feedback (no icons): the shared family slide, drawn last
-  // so it stays visible over the logo (it still sits under the art layer,
+  // Button press feedback: the shared family slide, drawn last so it
+  // stays visible over the logo (it still sits under the art layer,
   // which is above chrome). The helper sets its own fill color: the logo
   // above leaves it white, which would make a bare rect invisible on the
   // white background.
   family_slide_draw(ctx, bounds, GColorBlack);
+}
+
+// Paused overlay: when the track is paused, black pause bars centered over
+// the album art, on a topmost transparent layer (above the art). Nothing
+// shows while playing, or when no art is displayed.
+static void pause_update_proc(Layer *layer, GContext *ctx) {
+  if (!s_art_seen || s_playing) return;
+  int cx = s_art_rect.origin.x + ART_SIZE / 2;
+  int cy = s_art_rect.origin.y + ART_SIZE / 2;
+  graphics_context_set_fill_color(ctx, GColorBlack);
+  graphics_fill_rect(ctx, GRect(cx - PAUSE_BAR_GAP / 2 - PAUSE_BAR_W, cy - PAUSE_BAR_H / 2,
+                                PAUSE_BAR_W, PAUSE_BAR_H), 0, GCornerNone);
+  graphics_fill_rect(ctx, GRect(cx + PAUSE_BAR_GAP / 2, cy - PAUSE_BAR_H / 2,
+                                PAUSE_BAR_W, PAUSE_BAR_H), 0, GCornerNone);
 }
 
 static void inbox_received(DictionaryIterator *iter, void *context) {
@@ -241,6 +153,7 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
   if (state_t) {
     s_playing = (state_t->value->int32 != 0);
     if (s_chrome_layer) layer_mark_dirty(s_chrome_layer);
+    if (s_pause_layer) layer_mark_dirty(s_pause_layer);
   }
   Tuple *w_t = dict_find(iter, MESSAGE_KEY_ART_W);
   Tuple *h_t = dict_find(iter, MESSAGE_KEY_ART_H);
@@ -262,6 +175,7 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
     layer_set_hidden(bitmap_layer_get_layer(s_art_layer), false);
     layer_mark_dirty(bitmap_layer_get_layer(s_art_layer));
     if (s_chrome_layer) layer_mark_dirty(s_chrome_layer);
+    if (s_pause_layer) layer_mark_dirty(s_pause_layer);
     return;
   }
   if (!w_t || !h_t || !idx_t || !total_t || !data_t) return;
@@ -280,6 +194,7 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
     layer_set_hidden(bitmap_layer_get_layer(s_art_layer), true);
     layer_mark_dirty(bitmap_layer_get_layer(s_art_layer));
     if (s_chrome_layer) layer_mark_dirty(s_chrome_layer);
+    if (s_pause_layer) layer_mark_dirty(s_pause_layer);
     return;
   }
   // No idx==0 reset anymore: chunks arrive shuffled, so a mid-stream idx 0
@@ -331,6 +246,10 @@ static void window_load(Window *window) {
     text_layer_set_text(s_track_layer, s_track);
     layer_add_child(root, text_layer_get_layer(s_track_layer));
   }
+  // Paused overlay, topmost: transparent, draws only when paused on art.
+  s_pause_layer = layer_create(bounds);
+  layer_set_update_proc(s_pause_layer, pause_update_proc);
+  layer_add_child(root, s_pause_layer);
 }
 
 static void window_appear(Window *window) {
@@ -338,14 +257,10 @@ static void window_appear(Window *window) {
 }
 
 static void window_unload(Window *window) {
-  if (s_button_anim) {
-    animation_unschedule(s_button_anim);
-    animation_destroy(s_button_anim);
-    s_button_anim = NULL;
-  }
   family_slide_teardown();
   if (s_track_layer) text_layer_destroy(s_track_layer);
   layer_destroy(s_chrome_layer);
+  if (s_pause_layer) layer_destroy(s_pause_layer);
 #ifdef PBL_COLOR
   bitmap_layer_destroy(s_art_layer);
   gbitmap_destroy(s_bmp);
