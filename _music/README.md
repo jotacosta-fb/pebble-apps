@@ -1,4 +1,4 @@
-# _music (v1.1.17) — Spotify controller
+# _music (v1.1.18) — Spotify controller
 
 White background, framed album art, the song name in the footer, and button
 icons on the right edge.

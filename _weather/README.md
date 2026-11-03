@@ -7,7 +7,7 @@ two-line ladder, the precipitation chance at the top, and a
 hand-drawn condition icon at the bottom. Data from Open-Meteo
 via the phone's location; no API key. After sunset the face
 inverts to white on black. The temperatures lean 5 degrees
-anticlockwise, Lean-style. Current version: 2.7.30. 2.7.30 replaces the slide's left corners with a curved nose (half-ellipse) whose depth varies a little with every press (6..10 px). 2.7.27 added the
+anticlockwise, Lean-style. Current version: 2.7.31. 2.7.31 also randomizes the nose peak's vertical position (-6..+6 px off the button row's center) with every press. 2.7.27 added the
 family button slide; 2.7.28 narrows it to the center button only
 (activation viz only when staying in the app): Up exits instantly
 again, Down is unsubscribed.
