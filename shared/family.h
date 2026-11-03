@@ -19,6 +19,9 @@
 
 #pragma once
 
+#include <stdlib.h>
+#include <time.h>
+
 #ifndef FAMILY_WOBBLE_DELAY_MS
 #define FAMILY_WOBBLE_DELAY_MS 250
 #endif
@@ -203,11 +206,14 @@ FAMILY_API static GRect family_pop_rect(int progress, int progress_max,
 //
 // The shape is ONE continuous polygon path (no cutouts, no erasing, no
 // overlapping shapes), so there are no stray pixels at the joins: the
-// outline is tangent-continuous everywhere — left-edge arcs meet the
-// flange curves with horizontal tangents, flange curves meet the screen
-// edge with vertical tangents, arcs meet the left edge with vertical
-// tangents. Left-corner radius is half the body width (4 px on emery,
-// the approved L4).
+// outline is tangent-continuous everywhere — the dome nose meets the
+// flange curves with horizontal tangents and turns smoothly at its tip,
+// flange curves meet the screen edge with vertical tangents. The left
+// end is a curved nose (half-ellipse), not a rectangle edge: its depth
+// is the body width plus a small per-press random variation (-2..+2 px
+// on emery, so 6..10 px), picked fresh in family_slide_start and held
+// for the whole animation, so the nose differs press to press but never
+// morphs mid-slide.
 //
 // The finish callback fires only when the animation runs to completion
 // (not when a newer press unschedules it): apps that exit on Up pass a
@@ -223,6 +229,8 @@ FAMILY_API static Layer *s_family_slide_layer = NULL;
 FAMILY_API static int s_family_slide_button = 0;  // 0 none, 1 up, 2 select, 3 down
 FAMILY_API static int s_family_slide_progress = 0;
 FAMILY_API static FamilySlideFinishedCb s_family_slide_cb = NULL;
+FAMILY_API static int s_family_slide_dome_var = 0;  // -2..+2, picked per press
+FAMILY_API static bool s_family_slide_seeded = false;
 
 FAMILY_API static void family_slide_update(Animation *animation,
                                            AnimationProgress progress) {
@@ -261,6 +269,15 @@ FAMILY_API static void family_slide_start(int button, Layer *layer,
   s_family_slide_button = button;
   s_family_slide_layer = layer;
   s_family_slide_cb = cb;
+  // Fresh nose for every press: seed once from the clock, then take a
+  // small variation (-2..+2 px on the emery scale) that holds for the
+  // whole animation, so the nose differs press to press but never
+  // morphs mid-slide.
+  if (!s_family_slide_seeded) {
+    srand((unsigned)time(NULL));
+    s_family_slide_seeded = true;
+  }
+  s_family_slide_dome_var = (int)(rand() % 5) - 2;
   s_family_slide_anim = animation_create();
   animation_set_duration(s_family_slide_anim, FAMILY_SLIDE_DURATION_MS);
   animation_set_implementation(s_family_slide_anim, &s_family_slide_impl);
@@ -283,49 +300,56 @@ FAMILY_API static void family_slide_teardown(void) {
   s_family_slide_progress = 0;
 }
 
-// Flange tab outline, drawn as one filled polygon path. (x, y) is the
-// body rect's top-left at the current slide position; body_w is the
-// body width, rect_h the body height. The right end flares to
-// rect_h + 2*flare tall at the screen edge (flare = rect_h*5/28, 10 px
-// on emery); the left corners are rounded with radius body_w/2 (4 px
-// on emery, L4). Every join is tangent-continuous (see the section
-// comment), so the boundary has no steps, gaps, or stray pixels.
+// Flange tab with a curved-nose left end, drawn as one filled polygon
+// path. (x, y) is the body rect's top-left at the current slide
+// position; body_w is the body width, rect_h the body height, dome_d
+// the nose depth (how far the nose bulges left of the body). The right
+// end flares to rect_h + 2*flare tall at the screen edge (flare =
+// rect_h*5/28, 10 px on emery). The left end is a half-ellipse of
+// horizontal semi-axis dome_d and vertical semi-axis rect_h/2, so it
+// meets the flange curves with horizontal tangents and turns smoothly
+// (vertical tangent) at the nose tip. Every join is tangent-continuous
+// (see the section comment), so the boundary has no steps, gaps, or
+// stray pixels. 128 points covers rect_h <= 94 (shipped platforms top
+// out at 56).
 FAMILY_API static void family_flange_draw(GContext *ctx, int x, int y,
                                           int body_w, int rect_h,
-                                          GColor color) {
+                                          int dome_d, GColor color) {
   int flare = rect_h * 5 / 28;
-  int r = body_w / 2;
   int edge = x + body_w;  // geometric right edge (clipped at the screen)
-  GPoint points[64];
+  int cy = y + rect_h / 2;
+  int r = rect_h / 2;  // dome vertical semi-axis
+  GPoint points[128];
   int n = 0;
-  // Top-left arc: center (x+r, y+r), from (x, y+r) to (x+r, y).
-  for (int k = 0; k <= r; k++) {
-    points[n++] = GPoint(x + r - family_isqrt(r * r - k * k), y + r - k);
-  }
-  // Top flange quadratic: (x+r, y) via (edge, y) to (edge, y-flare).
+  // Start at the dome's top point = the top flange curve's start.
+  points[n++] = GPoint(x, y);
+  // Top flange quadratic: (x, y) via (edge, y) to (edge, y-flare).
   // Integer Bezier with t = i/16; endpoints exact.
   for (int i = 1; i <= 16; i++) {
     int u = 16 - i;
-    int px = (u * u * (x + r) + 2 * u * i * edge + i * i * edge) / 256;
+    int px = (u * u * x + 2 * u * i * edge + i * i * edge) / 256;
     int py = y - flare * i * i / 256;
     points[n++] = GPoint(px, py);
   }
   // Right edge down to the bottom tip.
   points[n++] = GPoint(edge, y + rect_h + flare);
   // Bottom flange quadratic: (edge, y+rect_h+flare) via (edge, y+rect_h)
-  // to (x+r, y+rect_h).
+  // to (x, y+rect_h).
   for (int i = 1; i <= 16; i++) {
     int u = 16 - i;
-    int px = (u * u * edge + 2 * u * i * edge + i * i * (x + r)) / 256;
+    int px = (u * u * edge + 2 * u * i * edge + i * i * x) / 256;
     int py = y + rect_h + flare * u * u / 256;
     points[n++] = GPoint(px, py);
   }
-  // Bottom-left arc: center (x+r, y+rect_h-r), from (x+r, y+rect_h)
-  // back to (x, y+rect_h-r). Skip the first point: it duplicates the
-  // flange end.
-  for (int k = r - 1; k >= 0; k--) {
-    points[n++] = GPoint(x + r - family_isqrt(r * r - k * k),
-                         y + rect_h - r + k);
+  // Dome nose: half-ellipse from (x, y+rect_h) around the tip
+  // (x-dome_d, cy) back toward (x, y). One point per row; the last
+  // row is skipped because it duplicates the start point and the
+  // path auto-closes.
+  for (int k = rect_h - 1; k >= 1; k--) {
+    int row = y + k;
+    int dy = row - cy;
+    int dx = (dome_d * family_isqrt(r * r - dy * dy)) / r;
+    points[n++] = GPoint(x - dx, row);
   }
   GPathInfo info = { .num_points = n, .points = points };
   GPath *path = gpath_create(&info);
@@ -347,7 +371,13 @@ FAMILY_API static void family_slide_draw(GContext *ctx, GRect bounds,
                             ANIMATION_NORMALIZED_MAX,
                             w - body_w, cy - rect_h / 2,
                             body_w, rect_h);
-  family_flange_draw(ctx, r.origin.x, r.origin.y, r.size.w, r.size.h, color);
+  // Nose depth for this animation: body width plus the per-press
+  // variation picked in family_slide_start, floored at half the body
+  // width so the nose never goes flat.
+  int dome_d = r.size.w + s_family_slide_dome_var;
+  if (dome_d < r.size.w / 2) dome_d = r.size.w / 2;
+  family_flange_draw(ctx, r.origin.x, r.origin.y, r.size.w, r.size.h,
+                     dome_d, color);
 }
 
 // ---------- Half-circle mark ----------
