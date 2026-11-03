@@ -188,7 +188,7 @@ FAMILY_API static GRect family_pop_rect(int progress, int progress_max,
 
 // ---------- Shared button slide ----------
 // One implementation of the button-press slide for the whole family:
-// every app's Up/Select/Down press shows the same tall rectangle sliding
+// every app's Up/Select/Down press shows the same flange tab sliding
 // right-to-left in from the screen edge and back out, at the pressed
 // button's row. The app only wires three calls: start on the press, draw
 // at the end of its full-screen layer's update proc, and teardown in
@@ -196,10 +196,18 @@ FAMILY_API static GRect family_pop_rect(int progress, int progress_max,
 // finish callback all live here — no per-app copies.
 //
 // Rows and size scale from the layer bounds, so every platform gets the
-// same proportions: rect 11/200 of the width by 56/228 of the height,
+// same proportions: body 8/200 of the width by 56/228 of the height,
 // row centers at 42/228 (Up), 1/2 (Select), 186/228 (Down) of the height,
 // right edge on the screen edge. On emery (200x228) that is exactly the
-// 11x56 rect at tops 14/86/158.
+// 8x56 body at tops 14/86/158, flaring to 76 tall at the edge.
+//
+// The shape is ONE continuous polygon path (no cutouts, no erasing, no
+// overlapping shapes), so there are no stray pixels at the joins: the
+// outline is tangent-continuous everywhere — left-edge arcs meet the
+// flange curves with horizontal tangents, flange curves meet the screen
+// edge with vertical tangents, arcs meet the left edge with vertical
+// tangents. Left-corner radius is half the body width (4 px on emery,
+// the approved L4).
 //
 // The finish callback fires only when the animation runs to completion
 // (not when a newer press unschedules it): apps that exit on Up pass a
@@ -275,21 +283,71 @@ FAMILY_API static void family_slide_teardown(void) {
   s_family_slide_progress = 0;
 }
 
+// Flange tab outline, drawn as one filled polygon path. (x, y) is the
+// body rect's top-left at the current slide position; body_w is the
+// body width, rect_h the body height. The right end flares to
+// rect_h + 2*flare tall at the screen edge (flare = rect_h*5/28, 10 px
+// on emery); the left corners are rounded with radius body_w/2 (4 px
+// on emery, L4). Every join is tangent-continuous (see the section
+// comment), so the boundary has no steps, gaps, or stray pixels.
+FAMILY_API static void family_flange_draw(GContext *ctx, int x, int y,
+                                          int body_w, int rect_h,
+                                          GColor color) {
+  int flare = rect_h * 5 / 28;
+  int r = body_w / 2;
+  int edge = x + body_w;  // geometric right edge (clipped at the screen)
+  GPoint points[64];
+  int n = 0;
+  // Top-left arc: center (x+r, y+r), from (x, y+r) to (x+r, y).
+  for (int k = 0; k <= r; k++) {
+    points[n++] = GPoint(x + r - family_isqrt(r * r - k * k), y + r - k);
+  }
+  // Top flange quadratic: (x+r, y) via (edge, y) to (edge, y-flare).
+  // Integer Bezier with t = i/16; endpoints exact.
+  for (int i = 1; i <= 16; i++) {
+    int u = 16 - i;
+    int px = (u * u * (x + r) + 2 * u * i * edge + i * i * edge) / 256;
+    int py = y - flare * i * i / 256;
+    points[n++] = GPoint(px, py);
+  }
+  // Right edge down to the bottom tip.
+  points[n++] = GPoint(edge, y + rect_h + flare);
+  // Bottom flange quadratic: (edge, y+rect_h+flare) via (edge, y+rect_h)
+  // to (x+r, y+rect_h).
+  for (int i = 1; i <= 16; i++) {
+    int u = 16 - i;
+    int px = (u * u * edge + 2 * u * i * edge + i * i * (x + r)) / 256;
+    int py = y + rect_h + flare * u * u / 256;
+    points[n++] = GPoint(px, py);
+  }
+  // Bottom-left arc: center (x+r, y+rect_h-r), from (x+r, y+rect_h)
+  // back to (x, y+rect_h-r). Skip the first point: it duplicates the
+  // flange end.
+  for (int k = r - 1; k >= 0; k--) {
+    points[n++] = GPoint(x + r - family_isqrt(r * r - k * k),
+                         y + rect_h - r + k);
+  }
+  GPathInfo info = { .num_points = n, .points = points };
+  GPath *path = gpath_create(&info);
+  graphics_context_set_fill_color(ctx, color);
+  gpath_draw_filled(ctx, path);
+  gpath_destroy(path);
+}
+
 FAMILY_API static void family_slide_draw(GContext *ctx, GRect bounds,
                                          GColor color) {
   if (s_family_slide_button == 0) return;
   int w = bounds.size.w, h = bounds.size.h;
-  int rect_w = w * 11 / 200;
+  int body_w = w * 8 / 200;
   int rect_h = h * 56 / 228;
   int cy = (s_family_slide_button == 1) ? h * 42 / 228
       : (s_family_slide_button == 2) ? h / 2
       : h * 186 / 228;
-  graphics_context_set_fill_color(ctx, color);
-  graphics_fill_rect(ctx, family_pop_rect(s_family_slide_progress,
-                                          ANIMATION_NORMALIZED_MAX,
-                                          w - rect_w, cy - rect_h / 2,
-                                          rect_w, rect_h),
-                     0, GCornerNone);
+  GRect r = family_pop_rect(s_family_slide_progress,
+                            ANIMATION_NORMALIZED_MAX,
+                            w - body_w, cy - rect_h / 2,
+                            body_w, rect_h);
+  family_flange_draw(ctx, r.origin.x, r.origin.y, r.size.w, r.size.h, color);
 }
 
 // ---------- Half-circle mark ----------
