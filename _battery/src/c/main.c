@@ -315,16 +315,10 @@ static void pct_update_proc(Layer *layer, GContext *ctx) {
   // days and % paths only.)
   family_earmarks(ctx, b, family_ink_color(), family_bg_color());
 
-  // Center-button mark (user, 2.8.29): the shared half circle at the
-  // right edge middle, flat side on the screen edge — the Select
-  // indicator. Painted here, before all branches, so the days, % and
-  // "--" states all show it like the corners above (the branches below
-  // return early). It sits at the screen edge, where the centered
-  // digits never reach, so painting first costs nothing; red wins when
-  // low, like everything else here. No activation viz on this app: the
-  // slide is gone from all three buttons.
-  family_half_circle(ctx, b.size.w, b.size.h / 2, b.size.h * 11 / 228,
-                     battery_ink());
+  // No center-button mark (user, 2.8.30: the half circle added in
+  // 2.8.29 is gone again) and no activation viz on this app: the slide
+  // is gone from all three buttons. The toggle and the appear wobble
+  // are untouched.
 
   if (s_pct < 0) {
     GFont f = s_f48;
