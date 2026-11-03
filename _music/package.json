@@ -1,0 +1,46 @@
+{
+  "author": "Jota",
+  "dependencies": {},
+  "keywords": [
+    "music"
+  ],
+  "name": "music-controller",
+  "pebble": {
+    "capabilities": [
+      "configurable"
+    ],
+    "displayName": "_music",
+    "enableMultiJS": true,
+    "messageKeys": [
+      "REQ",
+      "PLAYPAUSE",
+      "NEXT",
+      "PREV",
+      "ART_W",
+      "ART_H",
+      "ART_IDX",
+      "ART_TOTAL",
+      "ART_DATA",
+      "TRACK",
+      "STATE",
+      "ART_START"
+    ],
+    "resources": {
+      "media": []
+    },
+    "watchapp": {
+      "watchface": false
+    },
+    "uuid": "c6996c47-99c2-4b3e-ae42-066812986f13",
+    "sdkVersion": "3",
+    "targetPlatforms": [
+      "aplite",
+      "basalt",
+      "chalk",
+      "diorite",
+      "emery",
+      "flint"
+    ]
+  },
+  "version": "1.1.14"
+}

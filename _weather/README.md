@@ -7,4 +7,6 @@ two-line ladder, the precipitation chance at the top, and a
 hand-drawn condition icon at the bottom. Data from Open-Meteo
 via the phone's location; no API key. After sunset the face
 inverts to white on black. The temperatures lean 5 degrees
-anticlockwise, Lean-style. Current version: 2.7.26
+anticlockwise, Lean-style. Current version: 2.7.27. 2.7.27 adds the
+family button slide on all three buttons (Up exits after the slide;
+Down is newly subscribed, slide only).

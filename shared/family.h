@@ -154,6 +154,144 @@ FAMILY_API static void family_wobble_stop(void) {
   if (s_family_wobble_hook) s_family_wobble_hook(0);
 }
 
+// ---------- Pop-in rect ----------
+// Button-press feedback for buttons with no icon (in _music: Up/Down):
+// the same tall rectangle, sliding into view — the iPhone-volume-button
+// feel, localized to the button. No growing in and out: the rect keeps
+// its constant size and only translates.
+//
+// Pure function of animation progress, so any app can reuse it: the app
+// owns the Animation (any duration); on each update it draws the
+// returned rect, and when the animation stops it draws nothing.
+//
+// progress runs 0..progress_max (ANIMATION_NORMALIZED_MAX for a Pebble
+// Animation). slot_x/slot_y is the rect's fully-in-view top-left, and
+// rect_w/rect_h is its constant size (tall, mirroring the button).
+// Position follows a sine bump: hidden just off the right edge at rest
+// (x = slot_x + rect_w, fully off-screen), fully in view at
+// mid-animation, back off the edge at the end. So the motion is
+// right-to-left in, left-to-right out, decelerating into the slot so it
+// briefly lingers there. Integer math only; rounded, not truncated, so
+// the rect truly reaches its in-view position (sin_lookup tops out at
+// TRIG_MAX_RATIO - 1, and plain truncation would stop 1/10 short).
+FAMILY_API static GRect family_pop_rect(int progress, int progress_max,
+                                        int slot_x, int slot_y,
+                                        int rect_w, int rect_h) {
+  int32_t theta = progress_max > 0
+      ? (int32_t)(((int64_t)progress * (TRIG_MAX_ANGLE / 2)) / progress_max)
+      : 0;
+  int32_t sine = sin_lookup(theta);  // 0..TRIG_MAX_RATIO across 0..180°
+  int in_x10 = (10 * sine + TRIG_MAX_RATIO / 2) / TRIG_MAX_RATIO;  // 0..10
+  int x = slot_x + rect_w - rect_w * in_x10 / 10;
+  return GRect(x, slot_y, rect_w, rect_h);
+}
+
+// ---------- Shared button slide ----------
+// One implementation of the button-press slide for the whole family:
+// every app's Up/Select/Down press shows the same tall rectangle sliding
+// right-to-left in from the screen edge and back out, at the pressed
+// button's row. The app only wires three calls: start on the press, draw
+// at the end of its full-screen layer's update proc, and teardown in
+// window_unload. The animation object, progress, button, layer, and
+// finish callback all live here — no per-app copies.
+//
+// Rows and size scale from the layer bounds, so every platform gets the
+// same proportions: rect 11/200 of the width by 56/228 of the height,
+// row centers at 42/228 (Up), 1/2 (Select), 186/228 (Down) of the height,
+// right edge on the screen edge. On emery (200x228) that is exactly the
+// 11x56 rect at tops 14/86/158.
+//
+// The finish callback fires only when the animation runs to completion
+// (not when a newer press unschedules it): apps that exit on Up pass a
+// callback that pops the window, so the exit waits for the 350 ms slide
+// and the feedback stays visible; pressing another button first cancels
+// the exit, as it should.
+#ifndef FAMILY_SLIDE_DURATION_MS
+#define FAMILY_SLIDE_DURATION_MS 350
+#endif
+typedef void (*FamilySlideFinishedCb)(int button);
+FAMILY_API static Animation *s_family_slide_anim = NULL;
+FAMILY_API static Layer *s_family_slide_layer = NULL;
+FAMILY_API static int s_family_slide_button = 0;  // 0 none, 1 up, 2 select, 3 down
+FAMILY_API static int s_family_slide_progress = 0;
+FAMILY_API static FamilySlideFinishedCb s_family_slide_cb = NULL;
+
+FAMILY_API static void family_slide_update(Animation *animation,
+                                           AnimationProgress progress) {
+  s_family_slide_progress = progress;
+  if (s_family_slide_layer) layer_mark_dirty(s_family_slide_layer);
+}
+
+FAMILY_API static void family_slide_stopped(Animation *animation, bool finished,
+                                            void *context) {
+  int button = s_family_slide_button;
+  s_family_slide_button = 0;
+  s_family_slide_progress = 0;
+  if (s_family_slide_layer) layer_mark_dirty(s_family_slide_layer);
+  if (finished && s_family_slide_cb) s_family_slide_cb(button);
+}
+
+// The AnimationImplementation/Handlers must be file-scope static const:
+// the animation keeps the pointers.
+FAMILY_API static const AnimationImplementation s_family_slide_impl = {
+  .update = family_slide_update,
+};
+FAMILY_API static const AnimationHandlers s_family_slide_handlers = {
+  .stopped = family_slide_stopped,
+};
+
+FAMILY_API static void family_slide_start(int button, Layer *layer,
+                                          FamilySlideFinishedCb cb) {
+  if (s_family_slide_anim) {
+    animation_unschedule(s_family_slide_anim);
+    animation_destroy(s_family_slide_anim);
+    s_family_slide_anim = NULL;
+  }
+  // Set after the old animation is gone: unschedule may fire its stopped
+  // handler, which resets s_family_slide_button (but never the callback:
+  // an unscheduled animation reports finished=false).
+  s_family_slide_button = button;
+  s_family_slide_layer = layer;
+  s_family_slide_cb = cb;
+  s_family_slide_anim = animation_create();
+  animation_set_duration(s_family_slide_anim, FAMILY_SLIDE_DURATION_MS);
+  animation_set_implementation(s_family_slide_anim, &s_family_slide_impl);
+  animation_set_handlers(s_family_slide_anim, s_family_slide_handlers, NULL);
+  animation_schedule(s_family_slide_anim);
+}
+
+FAMILY_API static void family_slide_teardown(void) {
+  // Clear the layer/callback FIRST: the unschedule below fires the
+  // stopped handler, and it must not mark a dying layer dirty or fire
+  // the callback during unload.
+  s_family_slide_layer = NULL;
+  s_family_slide_cb = NULL;
+  if (s_family_slide_anim) {
+    animation_unschedule(s_family_slide_anim);
+    animation_destroy(s_family_slide_anim);
+    s_family_slide_anim = NULL;
+  }
+  s_family_slide_button = 0;
+  s_family_slide_progress = 0;
+}
+
+FAMILY_API static void family_slide_draw(GContext *ctx, GRect bounds,
+                                         GColor color) {
+  if (s_family_slide_button == 0) return;
+  int w = bounds.size.w, h = bounds.size.h;
+  int rect_w = w * 11 / 200;
+  int rect_h = h * 56 / 228;
+  int cy = (s_family_slide_button == 1) ? h * 42 / 228
+      : (s_family_slide_button == 2) ? h / 2
+      : h * 186 / 228;
+  graphics_context_set_fill_color(ctx, color);
+  graphics_fill_rect(ctx, family_pop_rect(s_family_slide_progress,
+                                          ANIMATION_NORMALIZED_MAX,
+                                          w - rect_w, cy - rect_h / 2,
+                                          rect_w, rect_h),
+                     0, GCornerNone);
+}
+
 // ---------- Day/night engine ----------
 // Shared by _weather and _battery: after sunset the display
 // inverts (black background, white ink). The watch computes

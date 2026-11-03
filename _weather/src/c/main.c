@@ -579,19 +579,34 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
   }
 }
 
+// The Up slide's finish callback: the exit waits for the 350 ms slide so
+// the feedback stays visible; pressing another button first cancels the
+// exit (the callback only fires on a completed animation).
+static void slide_finished_pop(int button) {
+  if (button == 1) window_stack_pop(true);
+}
+
 static void select_click_handler(ClickRecognizerRef recognizer, void *context) {
   family_idle_arm();
+  family_slide_start(2, s_qt_layer, NULL);
   request_update_forced(true);
 }
 
 static void up_click_handler(ClickRecognizerRef recognizer, void *context) {
-  // Top button returns to the watchface (user request).
-  window_stack_pop(true);
+  // Top button returns to the watchface (user request) — via the slide's
+  // finish callback, so the slide plays before the exit.
+  family_slide_start(1, s_qt_layer, slide_finished_pop);
+}
+
+static void down_click_handler(ClickRecognizerRef recognizer, void *context) {
+  family_idle_arm();
+  family_slide_start(3, s_qt_layer, NULL);
 }
 
 static void click_config_provider(void *context) {
   window_single_click_subscribe(BUTTON_ID_SELECT, select_click_handler);
   window_single_click_subscribe(BUTTON_ID_UP, up_click_handler);
+  window_single_click_subscribe(BUTTON_ID_DOWN, down_click_handler);
 }
 
 // ---------- Window ----------
@@ -661,6 +676,9 @@ static void fetch_anim_start(void) {
 static void qt_update_proc(Layer *layer, GContext *ctx) {
   family_earmarks(ctx, layer_get_bounds(layer), family_ink_color(),
                      family_bg_color());
+  // Button slide (family helper): drawn last, topmost; ink-colored so it
+  // reads in both day and night themes.
+  family_slide_draw(ctx, layer_get_bounds(layer), family_ink_color());
 }
 
 static void window_load(Window *window) {
@@ -705,6 +723,7 @@ static void window_load(Window *window) {
 
 static void window_unload(Window *window) {
   fetch_anim_stop();
+  family_slide_teardown();
   layer_destroy(s_temps_layer);
   layer_destroy(s_footer_layer);
   layer_destroy(s_qt_layer);
