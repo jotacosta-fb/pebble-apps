@@ -202,7 +202,8 @@ FAMILY_API static GRect family_pop_rect(int progress, int progress_max,
 // same proportions: body 8/200 of the width by 56/228 of the height,
 // row centers at 42/228 (Up), 1/2 (Select), 186/228 (Down) of the height,
 // right edge on the screen edge. On emery (200x228) that is exactly the
-// 8x56 body at tops 14/86/158, flaring to 76 tall at the edge.
+// 8x56 body at tops 14/86/158, flaring to 96 tall at the edge
+// (10 px top, 30 px bottom).
 //
 // The shape is ONE continuous polygon path (no cutouts, no erasing, no
 // overlapping shapes), so there are no stray pixels at the joins: the
@@ -210,8 +211,8 @@ FAMILY_API static GRect family_pop_rect(int progress, int progress_max,
 // flange curves with horizontal tangents and turns smoothly at its tip,
 // flange curves meet the screen edge with vertical tangents. The left
 // end is a curved nose, not a rectangle edge: its depth is the body
-// width plus a small per-press random variation (-2..+2 px on emery,
-// so 6..10 px), and its peak (tip) sits a random -6..+6 px off the
+// width plus a small per-press random variation (-4..-1 px on emery,
+// so 4..7 px), and its peak (tip) sits a random -6..+6 px off the
 // button row's center, both picked fresh in family_slide_start and
 // held for the whole animation, so the nose differs press to press
 // but never morphs mid-slide.
@@ -230,7 +231,7 @@ FAMILY_API static Layer *s_family_slide_layer = NULL;
 FAMILY_API static int s_family_slide_button = 0;  // 0 none, 1 up, 2 select, 3 down
 FAMILY_API static int s_family_slide_progress = 0;
 FAMILY_API static FamilySlideFinishedCb s_family_slide_cb = NULL;
-FAMILY_API static int s_family_slide_dome_var = 0;  // -2..+2, picked per press
+FAMILY_API static int s_family_slide_dome_var = 0;  // -4..-1, picked per press
 FAMILY_API static int s_family_slide_peak_var = 0;  // -6..+6, picked per press
 FAMILY_API static bool s_family_slide_seeded = false;
 
@@ -279,7 +280,7 @@ FAMILY_API static void family_slide_start(int button, Layer *layer,
     srand((unsigned)time(NULL));
     s_family_slide_seeded = true;
   }
-  s_family_slide_dome_var = (int)(rand() % 5) - 2;
+  s_family_slide_dome_var = (int)(rand() % 4) - 4;
   // Peak offset: the nose tip's vertical shift from the button row's
   // center, also fresh per press and held for the whole animation.
   s_family_slide_peak_var = (int)(rand() % 13) - 6;
@@ -310,8 +311,9 @@ FAMILY_API static void family_slide_teardown(void) {
 // position; body_w is the body width, rect_h the body height, dome_d
 // the nose depth (how far the nose bulges left of the body), peak_off
 // the nose tip's vertical shift from the row center. The right end
-// flares to rect_h + 2*flare tall at the screen edge (flare =
-// rect_h*5/28, 10 px on emery). The left end is two quarter-ellipses
+// flares to rect_h + flare_top + flare_bot tall at the screen edge
+// (top flare rect_h*5/28 = 10 px, bottom flare rect_h*15/28 = 30 px
+// on emery). The left end is two quarter-ellipses
 // meeting at the tip (x-dome_d, cy+peak_off): the upper half spans
 // y..tip_y, the lower tip_y..y+rect_h, so the tip can sit off-center
 // while both ends still meet the flange curves with horizontal
@@ -323,7 +325,8 @@ FAMILY_API static void family_flange_draw(GContext *ctx, int x, int y,
                                           int body_w, int rect_h,
                                           int dome_d, int peak_off,
                                           GColor color) {
-  int flare = rect_h * 5 / 28;
+  int flare_top = rect_h * 5 / 28;
+  int flare_bot = rect_h * 15 / 28;
   int edge = x + body_w;  // geometric right edge (clipped at the screen)
   int cy = y + rect_h / 2;
   int tip_y = cy + peak_off;
@@ -333,22 +336,22 @@ FAMILY_API static void family_flange_draw(GContext *ctx, int x, int y,
   int n = 0;
   // Start at the dome's top point = the top flange curve's start.
   points[n++] = GPoint(x, y);
-  // Top flange quadratic: (x, y) via (edge, y) to (edge, y-flare).
+  // Top flange quadratic: (x, y) via (edge, y) to (edge, y-flare_top).
   // Integer Bezier with t = i/16; endpoints exact.
   for (int i = 1; i <= 16; i++) {
     int u = 16 - i;
     int px = (u * u * x + 2 * u * i * edge + i * i * edge) / 256;
-    int py = y - flare * i * i / 256;
+    int py = y - flare_top * i * i / 256;
     points[n++] = GPoint(px, py);
   }
   // Right edge down to the bottom tip.
-  points[n++] = GPoint(edge, y + rect_h + flare);
-  // Bottom flange quadratic: (edge, y+rect_h+flare) via (edge, y+rect_h)
-  // to (x, y+rect_h).
+  points[n++] = GPoint(edge, y + rect_h + flare_bot);
+  // Bottom flange quadratic: (edge, y+rect_h+flare_bot) via
+  // (edge, y+rect_h) to (x, y+rect_h).
   for (int i = 1; i <= 16; i++) {
     int u = 16 - i;
     int px = (u * u * edge + 2 * u * i * edge + i * i * x) / 256;
-    int py = y + rect_h + flare * u * u / 256;
+    int py = y + rect_h + flare_bot * u * u / 256;
     points[n++] = GPoint(px, py);
   }
   // Dome nose: two quarter-ellipses from (x, y+rect_h) around the tip
