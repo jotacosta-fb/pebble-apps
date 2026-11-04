@@ -23,6 +23,7 @@
 #define FOOTER_H 36
 #define FOOTER_PAD_X 10
 #define FOOTER_FADE_W 12
+#define LOGO_TIMEOUT_MS 30000
 // Text layer top for the footer title, so the Gothic 28 ink centers in
 // the 36-tall white box (box 192..228, center 210). Measured on the
 // 1.1.30 pin: ink offset 9 from the layer top, ink 23 tall, so top 190
@@ -51,6 +52,31 @@ static bool s_art_seen = false;
 static GRect s_art_rect;
 static Layer *s_footer_layer;
 static GRect s_footer_box;
+static AppTimer *s_logo_timer = NULL;
+
+// Logo idle close: if the app sits on the empty-state logo for
+// LOGO_TIMEOUT_MS straight, it closes itself instead of lingering.
+// The clock runs on continuous logo time: button presses do not restart
+// it (they do not change what is shown), but art arriving cancels it,
+// and re-appearing re-arms it (the logo was not visible while covered).
+static void logo_timer_cancel(void) {
+  if (s_logo_timer) {
+    app_timer_cancel(s_logo_timer);
+    s_logo_timer = NULL;
+  }
+}
+
+static void logo_timeout_cb(void *data) {
+  s_logo_timer = NULL;
+  if (s_art_seen) return;
+  if (window_stack_get_top_window() != s_window) return;
+  window_stack_pop(true);
+}
+
+static void logo_timer_arm(void) {
+  logo_timer_cancel();
+  s_logo_timer = app_timer_register(LOGO_TIMEOUT_MS, logo_timeout_cb, NULL);
+}
 static void footer_layout(void);
 
 static void send_key(uint32_t key) {
@@ -201,6 +227,7 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
     s_art_total_chunks = (int)total;
     s_art_got_chunks = 0;
     s_art_seen = true;
+    logo_timer_cancel();
     layer_set_hidden(bitmap_layer_get_layer(s_art_layer), false);
     layer_mark_dirty(bitmap_layer_get_layer(s_art_layer));
     if (s_chrome_layer) layer_mark_dirty(s_chrome_layer);
@@ -220,6 +247,7 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
     s_art_total_chunks = 0;
     s_art_got_chunks = 0;
     s_art_seen = false;
+    logo_timer_arm();
     layer_set_hidden(bitmap_layer_get_layer(s_art_layer), true);
     layer_mark_dirty(bitmap_layer_get_layer(s_art_layer));
     if (s_chrome_layer) layer_mark_dirty(s_chrome_layer);
@@ -382,9 +410,11 @@ static void window_load(Window *window) {
 
 static void window_appear(Window *window) {
   send_key(MESSAGE_KEY_REQ);
+  if (!s_art_seen) logo_timer_arm();
 }
 
 static void window_unload(Window *window) {
+  logo_timer_cancel();
   tick_timer_service_unsubscribe();
   family_slide_teardown();
   if (s_track_layer) text_layer_destroy(s_track_layer);
