@@ -18,7 +18,7 @@
 #define ART_CHUNK 1024
 #define ART_BYTES (ART_SIZE * ART_SIZE)
 #define FRAME 4
-#define FOOTER_H 36
+#define FOOTER_H 38
 #define FOOTER_GAP 0
 #define TRACK_MAX 127
 #define PAUSE_BAR_W 18
@@ -31,6 +31,7 @@
 static Window *s_window;
 static BitmapLayer *s_art_layer;
 static TextLayer *s_track_layer;
+static GFont s_title_font;
 static Layer *s_chrome_layer;
 static Layer *s_pause_layer;
 static GBitmap *s_bmp;
@@ -95,6 +96,15 @@ static void draw_logo_poly(GContext *ctx, const GPoint *poly, int count, int ccx
   gpath_destroy(path);
 }
 
+// One small filled triangle, for the corner arrows.
+static void draw_corner_arrow(GContext *ctx, GPoint p0, GPoint p1, GPoint p2) {
+  GPoint points[3] = { p0, p1, p2 };
+  GPathInfo info = { .num_points = 3, .points = points };
+  GPath *path = gpath_create(&info);
+  gpath_draw_filled(ctx, path);
+  gpath_destroy(path);
+}
+
 static void draw_spotify_logo(GContext *ctx) {
   int ccx = s_art_rect.origin.x + ART_SIZE / 2;
   int ccy = s_art_rect.origin.y + ART_SIZE / 2;
@@ -127,6 +137,20 @@ static void chrome_update_proc(Layer *layer, GContext *ctx) {
   // Empty state (nothing playing, no art): the grey Spotify logo, centered
   // where the art goes. It never coexists with the frame.
   if (!s_art_seen) draw_spotify_logo(ctx);
+  // Guide arrows, always visible: previous (<-) at the top-right,
+  // next (->) at the bottom-right — guidance for the Up (previous
+  // track) and Down (next track) buttons. Thin shaft + small head,
+  // light grey, tucked into the corners. Drawn before the slide, so a
+  // running slide briefly covers them where they overlap.
+  graphics_context_set_fill_color(ctx, GColorLightGray);
+  int ar = bounds.size.w - 2;
+  int bh = bounds.size.h;
+  // Top: previous (<-), centered on row 8.
+  graphics_fill_rect(ctx, GRect(ar - 6, 7, 6, 2), 0, GCornerNone);
+  draw_corner_arrow(ctx, GPoint(ar - 6, 4), GPoint(ar - 6, 12), GPoint(ar - 11, 8));
+  // Bottom: next (->), centered on row bh - 8.
+  graphics_fill_rect(ctx, GRect(ar - 11, bh - 9, 6, 2), 0, GCornerNone);
+  draw_corner_arrow(ctx, GPoint(ar - 6, bh - 12), GPoint(ar - 6, bh - 4), GPoint(ar - 1, bh - 8));
   // Button press feedback: the shared family slide, drawn last so it
   // stays visible over the logo (it still sits under the art layer,
   // which is above chrome). The helper sets its own fill color: the logo
@@ -286,7 +310,10 @@ static void window_load(Window *window) {
   if (s_show_footer) {
     s_track_layer = text_layer_create(
         GRect(0, caption_top, bounds.size.w, FOOTER_H));
-    text_layer_set_font(s_track_layer, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD));
+    // Title in LECO 34 (custom resource, full title charset) — larger
+    // than the Gothic 28 it replaces, smaller than the LECO 42 trial.
+    s_title_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_34));
+    text_layer_set_font(s_track_layer, s_title_font);
     text_layer_set_text_alignment(s_track_layer, GTextAlignmentCenter);
     text_layer_set_text_color(s_track_layer, family_ink_color());
     text_layer_set_background_color(s_track_layer, GColorClear);
@@ -308,6 +335,8 @@ static void window_unload(Window *window) {
   tick_timer_service_unsubscribe();
   family_slide_teardown();
   if (s_track_layer) text_layer_destroy(s_track_layer);
+  if (s_title_font) fonts_unload_custom_font(s_title_font);
+  s_title_font = NULL;
   layer_destroy(s_chrome_layer);
   if (s_pause_layer) layer_destroy(s_pause_layer);
 #ifdef PBL_COLOR

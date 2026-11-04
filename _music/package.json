@@ -28,7 +28,14 @@
       "LON"
     ],
     "resources": {
-      "media": []
+      "media": [
+        {
+          "type": "font",
+          "name": "FONT_LECO_34",
+          "file": "fonts/leco1976-pebble.otf",
+          "characterRegex": "[\\u0020-\\u007E\\u00A0-\\u00FF\\u2010-\\u201F]"
+        }
+      ]
     },
     "watchapp": {
       "watchface": false
@@ -44,5 +51,5 @@
       "flint"
     ]
   },
-  "version": "1.1.24"
+  "version": "1.1.25"
 }
