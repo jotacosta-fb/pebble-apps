@@ -1280,7 +1280,7 @@ function clearArt() {
   Pebble.sendAppMessage({ ART_W: ART_SIZE, ART_H: ART_SIZE, ART_IDX: 0, ART_TOTAL: 0, ART_DATA: [] });
 }
 
-function fetchArt(url) {
+function fetchArt(url, id) {
   var xhr = new XMLHttpRequest();
   xhr.open('GET', url);
   xhr.responseType = 'arraybuffer';
@@ -1290,6 +1290,7 @@ function fetchArt(url) {
     try {
       var img = decode(new Uint8Array(buf), { useTArray: true, formatAsRGBA: false });
       if (img.data.length !== img.width * img.height * 3) return;
+      artId = id; // only a decoded image counts: a failed fetch retries next poll
       sendArt(downscaleQuantize(img.data, img.width, img.height));
     } catch (e) {}
   };
@@ -1298,6 +1299,9 @@ function fetchArt(url) {
 }
 
 var lastTrackId = null;
+// artId: the track whose art actually reached sendArt (decode succeeded).
+// See poll(): a track with artId !== id gets its art refetched.
+var artId = null;
 
 function sendTrackState(name, playing) {
   Pebble.sendAppMessage({ TRACK: String(name).substring(0, 127), STATE: playing ? 1 : 0 });
@@ -1306,14 +1310,24 @@ function sendTrackState(name, playing) {
 function poll() {
   if (!load('sp_refresh')) return;
   api('GET', '/me/player/currently-playing', null, function (status, j) {
-    if (status === 204 || !j || !j.item) {
-      if (lastTrackId) { lastTrackId = null; clearArt(); }
+    // Confirmed nothing playable: a 204, or a 200 whose body has no item
+    // (an ad). Anything else without a usable body is a failed poll
+    // (network error, 401 after a failed refresh, ...) — leave the watch
+    // alone instead of wiping art that is still right.
+    if (status === 204 || (status === 200 && j && !j.item)) {
+      if (lastTrackId) { lastTrackId = null; artId = null; clearArt(); }
       sendTrackState('', false);
       return;
     }
+    if (status !== 200 || !j || !j.item) return;
     sendTrackState(j.item.name || '', !!j.is_playing);
     var id = j.item.id;
-    if (id !== lastTrackId) {
+    // Refetch when the track changed OR its art never arrived: fetchArt
+    // fails silently (network, bad bytes, decode), and lastTrackId alone
+    // must not mark a track "done" — one failed fetch used to leave the
+    // watch on the logo until the track changed. A pending track retries
+    // on the next poll (~10 s).
+    if (id !== lastTrackId || artId !== id) {
       lastTrackId = id;
       var images = j.item.album.images || [];
       var pick = null;
@@ -1321,7 +1335,7 @@ function poll() {
         if (images[k].width <= 320) { pick = images[k]; break; }
       }
       if (!pick && images.length) pick = images[images.length - 1];
-      if (pick) fetchArt(pick.url);
+      if (pick) fetchArt(pick.url, id);
     }
   });
 }
