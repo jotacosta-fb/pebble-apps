@@ -310,9 +310,10 @@ static void window_load(Window *window) {
   if (s_show_footer) {
     s_track_layer = text_layer_create(
         GRect(0, caption_top, bounds.size.w, FOOTER_H));
-    // Title in LECO 34 (custom resource, full title charset) — larger
-    // than the Gothic 28 it replaces, smaller than the LECO 42 trial.
-    s_title_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_LECO_34));
+    // Title in Roboto Bold 30 (custom resource, Apache 2.0, from the
+    // SDK's Moddable samples) — the closest sans to Gothic at 30 px; no
+    // Gothic 30 exists (system Gothic tops out at 28).
+    s_title_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_ROBOTO_30));
     text_layer_set_font(s_track_layer, s_title_font);
     text_layer_set_text_alignment(s_track_layer, GTextAlignmentCenter);
     text_layer_set_text_color(s_track_layer, family_ink_color());
