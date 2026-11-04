@@ -254,12 +254,16 @@ static void window_load(Window *window) {
   // already decide day vs night here.
   family_place_load(PKEY_LAT, PKEY_LON);
   window_set_background_color(window, family_bg_color());
-  // The art itself is centered both ways; the caption hangs tight below the
-  // frame only when it fits (emery yes, basalt no).
+  // The album + title center as one block: frame top to caption bottom
+  // sits on the screen's center line. The caption hangs tight below the
+  // frame only when the block fits (emery yes, basalt no); when it
+  // doesn't fit, the album alone stays centered and the caption hides.
   int ax = (bounds.size.w - ART_SIZE) / 2;
-  int ay = (bounds.size.h - ART_SIZE) / 2;
+  int block_h = ART_SIZE + FRAME * 2 + FOOTER_GAP + FOOTER_H;
+  int ay = (bounds.size.h - block_h) / 2 + FRAME;
   int caption_top = ay + ART_SIZE + FRAME + FOOTER_GAP;
   s_show_footer = (caption_top + FOOTER_H <= bounds.size.h);
+  if (!s_show_footer) ay = (bounds.size.h - ART_SIZE) / 2;
   s_art_rect = GRect(ax, ay, ART_SIZE, ART_SIZE);
   s_chrome_layer = layer_create(bounds);
   layer_set_update_proc(s_chrome_layer, chrome_update_proc);
