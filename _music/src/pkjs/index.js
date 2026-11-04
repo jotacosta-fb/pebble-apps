@@ -1159,7 +1159,7 @@ var CLIENT_ID = '0f62a6ce3ca444208f408007b67226bb';
 var CONFIG_URL = 'https://pebble-music-config.jota-costa.workers.dev/';
 var API = 'https://api.spotify.com/v1';
 var TOKEN_URL = 'https://accounts.spotify.com/api/token';
-var ART_SIZE = 144;
+var ART_SIZE = 200;
 var CHUNK = 1024;
 
 function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }

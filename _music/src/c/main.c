@@ -1,6 +1,7 @@
-// _music — Spotify controller. White background, thick-framed album art
-// centered both ways, song name as a tight caption below the art, button
-// bumps flushed to the right edge. When nothing is playing, the art layer
+// _music — Spotify controller. White background, full-bleed album art
+// (full width, bottom at the title, top cropped off-screen), song name
+// as a tight caption below the art, button bumps flushed to the right
+// edge. When nothing is playing, the art layer
 // hides and a grey Spotify logo (disc + knocked-out arcs) shows instead.
 // Buttons: Select = play/pause, Up = previous track, Down = next track.
 // Back is left at the system default (pops the app).
@@ -8,18 +9,16 @@
 // top to bottom, as chunks land. No idle exit: a controller stays up while listening.
 // family.h is included for the shared button slide (the Up/Down press
 // feedback) and the night engine (day/night chrome: window background,
-// frame, caption, slide and logo follow the on-watch sun times).
+// caption, slide and logo follow the on-watch sun times).
 // No wobble, no earmarks: art must not wobble, and earmarks would paint
 // over pixels. Everything in the header is opt-in.
 #include <pebble.h>
 #include "../../shared/family.h"
 
-#define ART_SIZE 144
+#define ART_SIZE 200
 #define ART_CHUNK 1024
 #define ART_BYTES (ART_SIZE * ART_SIZE)
-#define FRAME 4
 #define FOOTER_H 38
-#define FOOTER_GAP 0
 #define TRACK_MAX 127
 #define PAUSE_BAR_W 18
 #define PAUSE_BAR_H 78
@@ -42,6 +41,7 @@ static char s_track[TRACK_MAX + 1];
 static bool s_playing = false;
 static bool s_art_seen = false;
 static GRect s_art_rect;
+static int s_caption_top;
 static bool s_show_footer = false;
 
 static void send_key(uint32_t key) {
@@ -96,9 +96,11 @@ static void draw_logo_poly(GContext *ctx, const GPoint *poly, int count, int ccx
   gpath_destroy(path);
 }
 
-static void draw_spotify_logo(GContext *ctx) {
-  int ccx = s_art_rect.origin.x + ART_SIZE / 2;
-  int ccy = s_art_rect.origin.y + ART_SIZE / 2;
+static void draw_spotify_logo(GContext *ctx, GRect bounds) {
+  // Centered on the VISIBLE art: full width, 0..caption_top (emery), or
+  // the whole screen when the caption hides (basalt fallback).
+  int ccx = bounds.size.w / 2;
+  int ccy = s_show_footer ? s_caption_top / 2 : bounds.size.h / 2;
   // Knocked out to the background: disc grey, arcs in the background
   // color, so the logo reads on white by day and black by night.
   graphics_context_set_fill_color(ctx, family_night ? GColorLightGray : GColorDarkGray);
@@ -109,7 +111,10 @@ static void draw_spotify_logo(GContext *ctx) {
   draw_logo_poly(ctx, s_logo_arc_top, ARRAY_LENGTH(s_logo_arc_top), ccx, ccy);
 }
 
-// Chrome: the art frame plus the empty-state logo plus the shared slide.
+// Chrome: the empty-state logo plus the shared slide. No frame anymore:
+// the art bleeds to the edges. Chrome sits ABOVE the art layer, so the
+// slide draws over the artwork (it used to sit under it, which was fine
+// while the art was inset — full-bleed art would have hidden it).
 // No middle mark anymore: all three buttons animate with the slide, and
 // the paused state shows as black pause bars over the art (see
 // pause_update_proc, topmost layer).
@@ -117,22 +122,13 @@ static void chrome_update_proc(Layer *layer, GContext *ctx) {
   GRect bounds = layer_get_bounds(layer);
   graphics_context_set_fill_color(ctx, family_ink_color());
   graphics_context_set_stroke_color(ctx, family_ink_color());
-#ifdef PBL_COLOR
-  if (s_art_seen) {
-    for (int i = 0; i < FRAME; i++) {
-      graphics_draw_rect(ctx, GRect(s_art_rect.origin.x - FRAME + i, s_art_rect.origin.y - FRAME + i,
-                                    ART_SIZE + FRAME * 2 - i * 2, ART_SIZE + FRAME * 2 - i * 2));
-    }
-  }
-#endif
   // Empty state (nothing playing, no art): the grey Spotify logo, centered
-  // where the art goes. It never coexists with the frame.
-  if (!s_art_seen) draw_spotify_logo(ctx);
+  // on the visible art area.
+  if (!s_art_seen) draw_spotify_logo(ctx, bounds);
   // Button press feedback: the shared family slide, drawn last so it
-  // stays visible over the logo (it still sits under the art layer,
-  // which is above chrome). The helper sets its own fill color: the logo
-  // above leaves it white, which would make a bare rect invisible on the
-  // white background.
+  // stays visible over the logo and the art. The helper sets its own fill
+  // color: the logo above leaves it white, which would make a bare rect
+  // invisible on the white background.
   family_slide_draw(ctx, bounds, family_ink_color());
 }
 
@@ -142,8 +138,9 @@ static void chrome_update_proc(Layer *layer, GContext *ctx) {
 // Nothing shows while playing, or when no art is displayed.
 static void pause_update_proc(Layer *layer, GContext *ctx) {
   if (!s_art_seen || s_playing) return;
-  int cx = s_art_rect.origin.x + ART_SIZE / 2;
-  int cy = s_art_rect.origin.y + ART_SIZE / 2;
+  GRect bounds = layer_get_bounds(layer);
+  int cx = bounds.size.w / 2;
+  int cy = s_show_footer ? s_caption_top / 2 : bounds.size.h / 2;
   int half_w = PAUSE_BAR_W + PAUSE_BAR_GAP / 2;
   int half_h = PAUSE_BAR_H / 2;
   graphics_context_set_fill_color(ctx, GColorWhite);
@@ -257,20 +254,21 @@ static void window_load(Window *window) {
   // already decide day vs night here.
   family_place_load(PKEY_LAT, PKEY_LON);
   window_set_background_color(window, family_bg_color());
-  // The album + title center as one block: frame top to caption bottom
-  // sits on the screen's center line. The caption hangs tight below the
-  // frame only when the block fits (emery yes, basalt no); when it
-  // doesn't fit, the album alone stays centered and the caption hides.
-  int ax = (bounds.size.w - ART_SIZE) / 2;
-  int block_h = ART_SIZE + FRAME * 2 + FOOTER_GAP + FOOTER_H;
-  int ay = (bounds.size.h - block_h) / 2 + FRAME;
-  int caption_top = ay + ART_SIZE + FRAME + FOOTER_GAP;
-  s_show_footer = (caption_top + FOOTER_H <= bounds.size.h);
-  if (!s_show_footer) ay = (bounds.size.h - ART_SIZE) / 2;
+  // The title stays at y171, where 1.1.28 put it on emery; the art
+  // expands UP from there: full width, bottom at the title, top cropped
+  // off-screen (200 tall against a 171-tall slot). When the caption
+  // can't fit (basalt), the art alone stays centered and the caption
+  // hides, as before.
+  s_caption_top = 171;
+  s_show_footer = (s_caption_top + FOOTER_H <= bounds.size.h);
+  int ax, ay;
+  if (s_show_footer) { ax = 0; ay = s_caption_top - ART_SIZE; }
+  else { ax = (bounds.size.w - ART_SIZE) / 2; ay = (bounds.size.h - ART_SIZE) / 2; }
   s_art_rect = GRect(ax, ay, ART_SIZE, ART_SIZE);
   s_chrome_layer = layer_create(bounds);
   layer_set_update_proc(s_chrome_layer, chrome_update_proc);
-  layer_add_child(root, s_chrome_layer);
+  // Chrome is added AFTER the art layer below, so it sits above the art
+  // and the slide draws over the artwork (see chrome_update_proc).
 #ifdef PBL_COLOR
   s_bmp = gbitmap_create_blank(GSize(ART_SIZE, ART_SIZE), GBitmapFormat8Bit);
   s_art_data = gbitmap_get_data(s_bmp);
@@ -284,9 +282,10 @@ static void window_load(Window *window) {
   layer_set_hidden(bitmap_layer_get_layer(s_art_layer), true);
   layer_add_child(root, bitmap_layer_get_layer(s_art_layer));
 #endif
+  layer_add_child(root, s_chrome_layer);
   if (s_show_footer) {
     s_track_layer = text_layer_create(
-        GRect(0, caption_top, bounds.size.w, FOOTER_H));
+        GRect(0, s_caption_top, bounds.size.w, FOOTER_H));
     // Title in Roboto Bold 30 (custom resource, Apache 2.0, from the
     // SDK's Moddable samples) — the closest sans to Gothic at 30 px; no
     // Gothic 30 exists (system Gothic tops out at 28).
