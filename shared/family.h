@@ -202,8 +202,8 @@ FAMILY_API static GRect family_pop_rect(int progress, int progress_max,
 // same proportions: body 8/200 of the width by 56/228 of the height,
 // row centers at 42/228 (Up), 1/2 (Select), 186/228 (Down) of the height,
 // right edge on the screen edge. On emery (200x228) that is exactly the
-// 8x56 body at tops 14/86/158, flaring to 96 tall at the edge
-// (10 px top, 30 px bottom).
+// 8x56 body at tops 14/86/158, flaring to 116 tall at the edge
+// (30 px top, 30 px bottom).
 //
 // The shape is ONE continuous polygon path (no cutouts, no erasing, no
 // overlapping shapes), so there are no stray pixels at the joins: the
@@ -312,8 +312,8 @@ FAMILY_API static void family_slide_teardown(void) {
 // the nose depth (how far the nose bulges left of the body), peak_off
 // the nose tip's vertical shift from the row center. The right end
 // flares to rect_h + flare_top + flare_bot tall at the screen edge
-// (top flare rect_h*5/28 = 10 px, bottom flare rect_h*15/28 = 30 px
-// on emery). The left end is two quarter-ellipses
+// (top and bottom flares rect_h*15/28 = 30 px each on emery).
+// The left end is two quarter-ellipses
 // meeting at the tip (x-dome_d, cy+peak_off): the upper half spans
 // y..tip_y, the lower tip_y..y+rect_h, so the tip can sit off-center
 // while both ends still meet the flange curves with horizontal
@@ -325,7 +325,7 @@ FAMILY_API static void family_flange_draw(GContext *ctx, int x, int y,
                                           int body_w, int rect_h,
                                           int dome_d, int peak_off,
                                           GColor color) {
-  int flare_top = rect_h * 5 / 28;
+  int flare_top = rect_h * 15 / 28;
   int flare_bot = rect_h * 15 / 28;
   int edge = x + body_w;  // geometric right edge (clipped at the screen)
   int cy = y + rect_h / 2;
