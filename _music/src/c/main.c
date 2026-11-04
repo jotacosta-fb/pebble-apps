@@ -21,6 +21,7 @@
 #define ART_CHUNK 1024
 #define ART_BYTES (ART_W * ART_H)
 #define FOOTER_H 36
+#define FOOTER_PAD_X 10
 // Text layer top for the footer title, so the Gothic 28 ink centers in
 // the 36-tall white box (box 192..228, center 210). Measured on the
 // 1.1.30 pin: ink offset 9 from the layer top, ink 23 tall, so top 190
@@ -48,6 +49,7 @@ static bool s_playing = false;
 static bool s_art_seen = false;
 static GRect s_art_rect;
 static Layer *s_footer_layer;
+static void footer_layout(void);
 
 static void send_key(uint32_t key) {
   DictionaryIterator *iter = NULL;
@@ -172,7 +174,7 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
     const char *name = (track_t->length > 0) ? track_t->value->cstring : "";
     strncpy(s_track, name, TRACK_MAX);
     s_track[TRACK_MAX] = '\0';
-    if (s_track_layer) layer_mark_dirty(text_layer_get_layer(s_track_layer));
+    footer_layout();
   }
   Tuple *state_t = dict_find(iter, MESSAGE_KEY_STATE);
   if (state_t) {
@@ -251,6 +253,34 @@ static void footer_update_proc(Layer *layer, GContext *ctx) {
   graphics_fill_rect(ctx, bounds, 0, GCornerNone);
 }
 
+// The footer box shrink-wraps the title: a short title gets a compact
+// white box centered over the art (text width + padding each side), not
+// a bar end to end. A title that fills the width gets the full-width
+// box, and an empty title hides the box entirely. The text layer keeps
+// its tuned top (FOOTER_TEXT_TOP) so the ink stays centered in the box.
+static void footer_layout(void) {
+  if (!s_footer_layer || !s_track_layer) return;
+  GRect bounds = layer_get_bounds(window_get_root_layer(s_window));
+  int w = bounds.size.w;
+  int box_y = bounds.size.h - FOOTER_H;
+  if (s_track[0] == '\0') {
+    layer_set_hidden(s_footer_layer, true);
+    return;
+  }
+  layer_set_hidden(s_footer_layer, false);
+  GFont font = fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD);
+  GSize ts = graphics_text_layout_get_content_size(s_track, font,
+      GRect(0, 0, w, FOOTER_H), GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter);
+  int box_w = ts.w + FOOTER_PAD_X * 2;
+  if (box_w > w) box_w = w;
+  int box_x = (w - box_w) / 2;
+  layer_set_frame(s_footer_layer, GRect(box_x, box_y, box_w, FOOTER_H));
+  layer_set_frame(text_layer_get_layer(s_track_layer),
+                  GRect(box_x, FOOTER_TEXT_TOP, box_w, FOOTER_H));
+  layer_mark_dirty(s_footer_layer);
+  layer_mark_dirty(text_layer_get_layer(s_track_layer));
+}
+
 static void window_load(Window *window) {
   Layer *root = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(root);
@@ -296,6 +326,7 @@ static void window_load(Window *window) {
   text_layer_set_background_color(s_track_layer, GColorClear);
   text_layer_set_text(s_track_layer, s_track);
   layer_add_child(root, text_layer_get_layer(s_track_layer));
+  footer_layout();
   // Chrome above the footer, so the slide draws over the white box too.
   layer_add_child(root, s_chrome_layer);
   // Paused overlay, topmost: transparent, draws only when paused on art.
