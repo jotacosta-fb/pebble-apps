@@ -6,10 +6,11 @@
 // Back is left at the system default (pops the app).
 // The art arrives from the phone in 1024-byte chunks and is drawn progressively,
 // top to bottom, as chunks land. No idle exit: a controller stays up while listening.
-// family.h is included ONLY for the shared button slide (the Up/Down
-// press feedback). No wobble, no earmarks, no night engine: art must not
-// wobble, and earmarks would paint over pixels. Including the header adds
-// no behavior by itself — everything in it is opt-in.
+// family.h is included for the shared button slide (the Up/Down press
+// feedback) and the night engine (day/night chrome: window background,
+// frame, caption, slide and logo follow the on-watch sun times).
+// No wobble, no earmarks: art must not wobble, and earmarks would paint
+// over pixels. Everything in the header is opt-in.
 #include <pebble.h>
 #include "../../shared/family.h"
 
@@ -17,12 +18,15 @@
 #define ART_CHUNK 1024
 #define ART_BYTES (ART_SIZE * ART_SIZE)
 #define FRAME 4
-#define FOOTER_H 28
-#define FOOTER_GAP 4
+#define FOOTER_H 36
+#define FOOTER_GAP 0
 #define TRACK_MAX 127
-#define PAUSE_BAR_W 12
-#define PAUSE_BAR_H 52
-#define PAUSE_BAR_GAP 12
+#define PAUSE_BAR_W 18
+#define PAUSE_BAR_H 78
+#define PAUSE_BAR_GAP 18
+#define PAUSE_BORDER 4
+#define PKEY_LAT 1
+#define PKEY_LON 2
 
 static Window *s_window;
 static BitmapLayer *s_art_layer;
@@ -92,9 +96,11 @@ static void draw_logo_poly(GContext *ctx, const GPoint *poly, int count, int ccx
 static void draw_spotify_logo(GContext *ctx) {
   int ccx = s_art_rect.origin.x + ART_SIZE / 2;
   int ccy = s_art_rect.origin.y + ART_SIZE / 2;
-  graphics_context_set_fill_color(ctx, GColorDarkGray);
+  // Knocked out to the background: disc grey, arcs in the background
+  // color, so the logo reads on white by day and black by night.
+  graphics_context_set_fill_color(ctx, family_night ? GColorLightGray : GColorDarkGray);
   draw_logo_poly(ctx, s_logo_disc, ARRAY_LENGTH(s_logo_disc), ccx, ccy);
-  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_context_set_fill_color(ctx, family_bg_color());
   draw_logo_poly(ctx, s_logo_arc_bottom, ARRAY_LENGTH(s_logo_arc_bottom), ccx, ccy);
   draw_logo_poly(ctx, s_logo_arc_mid, ARRAY_LENGTH(s_logo_arc_mid), ccx, ccy);
   draw_logo_poly(ctx, s_logo_arc_top, ARRAY_LENGTH(s_logo_arc_top), ccx, ccy);
@@ -106,8 +112,8 @@ static void draw_spotify_logo(GContext *ctx) {
 // pause_update_proc, topmost layer).
 static void chrome_update_proc(Layer *layer, GContext *ctx) {
   GRect bounds = layer_get_bounds(layer);
-  graphics_context_set_fill_color(ctx, GColorBlack);
-  graphics_context_set_stroke_color(ctx, GColorBlack);
+  graphics_context_set_fill_color(ctx, family_ink_color());
+  graphics_context_set_stroke_color(ctx, family_ink_color());
 #ifdef PBL_COLOR
   if (s_art_seen) {
     for (int i = 0; i < FRAME; i++) {
@@ -124,24 +130,43 @@ static void chrome_update_proc(Layer *layer, GContext *ctx) {
   // which is above chrome). The helper sets its own fill color: the logo
   // above leaves it white, which would make a bare rect invisible on the
   // white background.
-  family_slide_draw(ctx, bounds, GColorBlack);
+  family_slide_draw(ctx, bounds, family_ink_color());
 }
 
-// Paused overlay: when the track is paused, black pause bars centered over
-// the album art, on a topmost transparent layer (above the art). Nothing
-// shows while playing, or when no art is displayed.
+// Paused overlay: when the track is paused, bigger black pause bars
+// centered over the album art, on a white plaque (the border) so they
+// read on any artwork, on a topmost transparent layer (above the art).
+// Nothing shows while playing, or when no art is displayed.
 static void pause_update_proc(Layer *layer, GContext *ctx) {
   if (!s_art_seen || s_playing) return;
   int cx = s_art_rect.origin.x + ART_SIZE / 2;
   int cy = s_art_rect.origin.y + ART_SIZE / 2;
+  int half_w = PAUSE_BAR_W + PAUSE_BAR_GAP / 2;
+  int half_h = PAUSE_BAR_H / 2;
+  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_fill_rect(ctx, GRect(cx - half_w - PAUSE_BORDER, cy - half_h - PAUSE_BORDER,
+                                (half_w + PAUSE_BORDER) * 2, (half_h + PAUSE_BORDER) * 2),
+                     0, GCornerNone);
   graphics_context_set_fill_color(ctx, GColorBlack);
-  graphics_fill_rect(ctx, GRect(cx - PAUSE_BAR_GAP / 2 - PAUSE_BAR_W, cy - PAUSE_BAR_H / 2,
+  graphics_fill_rect(ctx, GRect(cx - half_w, cy - half_h,
                                 PAUSE_BAR_W, PAUSE_BAR_H), 0, GCornerNone);
-  graphics_fill_rect(ctx, GRect(cx + PAUSE_BAR_GAP / 2, cy - PAUSE_BAR_H / 2,
+  graphics_fill_rect(ctx, GRect(cx + PAUSE_BAR_GAP / 2, cy - half_h,
                                 PAUSE_BAR_W, PAUSE_BAR_H), 0, GCornerNone);
 }
 
 static void inbox_received(DictionaryIterator *iter, void *context) {
+  // Location for the night engine: persisted on the watch, so one good
+  // fix keeps day/night correct without the phone. A flip repaints the
+  // chrome at once.
+  if (family_place_apply(iter, MESSAGE_KEY_LAT, MESSAGE_KEY_LON, PKEY_LAT, PKEY_LON)) {
+    window_set_background_color(s_window, family_bg_color());
+    if (s_chrome_layer) layer_mark_dirty(s_chrome_layer);
+    if (s_track_layer) {
+      text_layer_set_text_color(s_track_layer, family_ink_color());
+      layer_mark_dirty(text_layer_get_layer(s_track_layer));
+    }
+    if (s_pause_layer) layer_mark_dirty(s_pause_layer);
+  }
   Tuple *track_t = dict_find(iter, MESSAGE_KEY_TRACK);
   if (track_t) {
     const char *name = (track_t->length > 0) ? track_t->value->cstring : "";
@@ -209,10 +234,26 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
   layer_mark_dirty(bitmap_layer_get_layer(s_art_layer));
 }
 
+static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
+  // A night flip repaints the chrome: background, frame, caption, slide.
+  if (family_night_tick()) {
+    window_set_background_color(s_window, family_bg_color());
+    if (s_chrome_layer) layer_mark_dirty(s_chrome_layer);
+    if (s_track_layer) {
+      text_layer_set_text_color(s_track_layer, family_ink_color());
+      layer_mark_dirty(text_layer_get_layer(s_track_layer));
+    }
+    if (s_pause_layer) layer_mark_dirty(s_pause_layer);
+  }
+}
+
 static void window_load(Window *window) {
   Layer *root = window_get_root_layer(window);
   GRect bounds = layer_get_bounds(root);
-  window_set_background_color(window, GColorWhite);
+  // Night state before the first frame: restored coordinates (if any)
+  // already decide day vs night here.
+  family_place_load(PKEY_LAT, PKEY_LON);
+  window_set_background_color(window, family_bg_color());
   // The art itself is centered both ways; the caption hangs tight below the
   // frame only when it fits (emery yes, basalt no).
   int ax = (bounds.size.w - ART_SIZE) / 2;
@@ -239,9 +280,9 @@ static void window_load(Window *window) {
   if (s_show_footer) {
     s_track_layer = text_layer_create(
         GRect(0, caption_top, bounds.size.w, FOOTER_H));
-    text_layer_set_font(s_track_layer, fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD));
+    text_layer_set_font(s_track_layer, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD));
     text_layer_set_text_alignment(s_track_layer, GTextAlignmentCenter);
-    text_layer_set_text_color(s_track_layer, GColorBlack);
+    text_layer_set_text_color(s_track_layer, family_ink_color());
     text_layer_set_background_color(s_track_layer, GColorClear);
     text_layer_set_text(s_track_layer, s_track);
     layer_add_child(root, text_layer_get_layer(s_track_layer));
@@ -250,6 +291,7 @@ static void window_load(Window *window) {
   s_pause_layer = layer_create(bounds);
   layer_set_update_proc(s_pause_layer, pause_update_proc);
   layer_add_child(root, s_pause_layer);
+  tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
 }
 
 static void window_appear(Window *window) {
@@ -257,6 +299,7 @@ static void window_appear(Window *window) {
 }
 
 static void window_unload(Window *window) {
+  tick_timer_service_unsubscribe();
   family_slide_teardown();
   if (s_track_layer) text_layer_destroy(s_track_layer);
   layer_destroy(s_chrome_layer);

@@ -1348,11 +1348,28 @@ function togglePlay() {
   });
 }
 
-Pebble.addEventListener('ready', function () { poll(); setInterval(poll, 10000); });
+function sendLocation() {
+  try {
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      var lat = Math.round(pos.coords.latitude * 1e6);
+      var lon = Math.round(pos.coords.longitude * 1e6);
+      store('lastLat', String(pos.coords.latitude));
+      store('lastLon', String(pos.coords.longitude));
+      Pebble.sendAppMessage({ 'LAT': lat, 'LON': lon });
+    }, function () {
+      var la = load('lastLat'), lo = load('lastLon');
+      if (la !== null && lo !== null) {
+        Pebble.sendAppMessage({ 'LAT': Math.round(parseFloat(la) * 1e6), 'LON': Math.round(parseFloat(lo) * 1e6) });
+      }
+    });
+  } catch (e) {}
+}
+
+Pebble.addEventListener('ready', function () { poll(); sendLocation(); setInterval(poll, 10000); });
 
 Pebble.addEventListener('appmessage', function (e) {
   var d = e.payload;
-  if (d.REQ) poll();
+  if (d.REQ) { poll(); sendLocation(); }
   if (d.PLAYPAUSE) togglePlay();
   if (d.NEXT) api('POST', '/me/player/next', null, function () { setTimeout(poll, 400); });
   if (d.PREV) api('POST', '/me/player/previous', null, function () { setTimeout(poll, 400); });

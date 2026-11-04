@@ -23,7 +23,9 @@
       "ART_DATA",
       "TRACK",
       "STATE",
-      "ART_START"
+      "ART_START",
+      "LAT",
+      "LON"
     ],
     "resources": {
       "media": []
@@ -42,5 +44,5 @@
       "flint"
     ]
   },
-  "version": "1.1.20"
+  "version": "1.1.21"
 }
