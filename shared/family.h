@@ -223,7 +223,7 @@ FAMILY_API static GRect family_pop_rect(int progress, int progress_max,
 // and the feedback stays visible; pressing another button first cancels
 // the exit, as it should.
 #ifndef FAMILY_SLIDE_DURATION_MS
-#define FAMILY_SLIDE_DURATION_MS 350
+#define FAMILY_SLIDE_DURATION_MS 250
 #endif
 typedef void (*FamilySlideFinishedCb)(int button);
 FAMILY_API static Animation *s_family_slide_anim = NULL;

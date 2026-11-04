@@ -6,12 +6,12 @@ typeface. Author: Jota.
 
 | App | What it does | Version |
 | --- | --- | --- |
-| [_weather](_weather/) | Min/max temperature and precipitation for the day. Nothing else. | 2.7.33 |
+| [_weather](_weather/) | Min/max temperature and precipitation for the day. Nothing else. | 2.7.34 |
 | [_battery](_battery/) | Battery percentage as days remaining, learned from the watch's own drain. | 2.8.30 |
 | [_countdown](_countdown/) | A 45-minute countdown timer (adjustable), with a wakeup at zero. | 1.5.4 |
 | [_life](_life/) | Magic: The Gathering life counter, 20 to 0. | 1.10.3 |
 | [_watchface](_watchface/) | Watchface forked from Lean: huge tilted time, day/night aware, font-size setting. | 1.4.20 |
-| [_music](_music/) | Spotify controller: fullscreen album art, buttons do the controlling. | 1.1.23 |
+| [_music](_music/) | Spotify controller: fullscreen album art, buttons do the controlling. | 1.1.24 |
 
 ## Shared code
 
