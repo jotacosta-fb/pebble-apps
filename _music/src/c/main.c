@@ -52,18 +52,20 @@ static void send_key(uint32_t key) {
 
 static void select_click(ClickRecognizerRef recognizer, void *context) {
   // All three buttons animate the same way now: the shared family slide
-  // at the pressed button's row.
-  family_slide_start(2, s_chrome_layer, NULL);
+  // at the pressed button's row — but only when art is showing. In the
+  // empty state (Spotify logo, nothing playing) the buttons stay still;
+  // the control message still goes out either way.
+  if (s_art_seen) family_slide_start(2, s_chrome_layer, NULL);
   send_key(MESSAGE_KEY_PLAYPAUSE);
 }
 
 static void up_click(ClickRecognizerRef recognizer, void *context) {
-  family_slide_start(1, s_chrome_layer, NULL);
+  if (s_art_seen) family_slide_start(1, s_chrome_layer, NULL);
   send_key(MESSAGE_KEY_PREV);
 }
 
 static void down_click(ClickRecognizerRef recognizer, void *context) {
-  family_slide_start(3, s_chrome_layer, NULL);
+  if (s_art_seen) family_slide_start(3, s_chrome_layer, NULL);
   send_key(MESSAGE_KEY_NEXT);
 }
 
