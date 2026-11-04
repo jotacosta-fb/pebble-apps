@@ -24,6 +24,7 @@
 #define FOOTER_PAD_X 10
 #define FOOTER_FADE_W 12
 #define LOGO_TIMEOUT_MS 30000
+#define LOGO_BAR_H 6
 // Text layer top for the footer title, so the Gothic 28 ink centers in
 // the 36-tall white box (box 192..228, center 210). Measured on the
 // 1.1.30 pin: ink offset 9 from the layer top, ink 23 tall, so top 190
@@ -53,6 +54,7 @@ static GRect s_art_rect;
 static Layer *s_footer_layer;
 static GRect s_footer_box;
 static AppTimer *s_logo_timer = NULL;
+static time_t s_logo_deadline = 0;
 
 // Logo idle close: if the app sits on the empty-state logo for
 // LOGO_TIMEOUT_MS straight, it closes itself instead of lingering.
@@ -75,6 +77,7 @@ static void logo_timeout_cb(void *data) {
 
 static void logo_timer_arm(void) {
   logo_timer_cancel();
+  s_logo_deadline = time(NULL) + LOGO_TIMEOUT_MS / 1000;
   s_logo_timer = app_timer_register(LOGO_TIMEOUT_MS, logo_timeout_cb, NULL);
 }
 static void footer_layout(void);
@@ -159,6 +162,21 @@ static void chrome_update_proc(Layer *layer, GContext *ctx) {
   // Empty state (nothing playing, no art): the grey Spotify logo, centered
   // on the visible art area.
   if (!s_art_seen) draw_spotify_logo(ctx, bounds);
+  // Logo countdown: a bar at the very bottom, draining as the 30 s
+  // close timer runs out — full when the logo appears, gone when the
+  // app closes. The width is computed live from the deadline, so a
+  // missed tick can never leave a stale bar behind. Ink-colored, so it
+  // reads on the white day background and the black night one alike.
+  if (!s_art_seen) {
+    int remaining = (int)(s_logo_deadline - time(NULL));
+    if (remaining < 0) remaining = 0;
+    if (remaining > LOGO_TIMEOUT_MS / 1000) remaining = LOGO_TIMEOUT_MS / 1000;
+    int bar_w = remaining * bounds.size.w * 1000 / LOGO_TIMEOUT_MS;
+    if (bar_w > 0) {
+      graphics_context_set_fill_color(ctx, family_ink_color());
+      graphics_fill_rect(ctx, GRect(0, bounds.size.h - LOGO_BAR_H, bar_w, LOGO_BAR_H), 0, GCornerNone);
+    }
+  }
   // Button press feedback: the shared family slide, drawn last so it
   // stays visible over the logo and the art. The helper sets its own fill
   // color: the logo above leaves it white, which would make a bare rect
@@ -274,6 +292,10 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
     if (s_chrome_layer) layer_mark_dirty(s_chrome_layer);
     if (s_pause_layer) layer_mark_dirty(s_pause_layer);
   }
+  // Logo countdown bar: redraw the chrome once a second while the logo
+  // shows, so the bar drains. With art showing there is nothing to
+  // update, so no extra dirty marks.
+  if (!s_art_seen && s_chrome_layer) layer_mark_dirty(s_chrome_layer);
 }
 
 // Position hash for the torn fade: deterministic, so the edge looks
@@ -405,7 +427,7 @@ static void window_load(Window *window) {
   s_pause_layer = layer_create(bounds);
   layer_set_update_proc(s_pause_layer, pause_update_proc);
   layer_add_child(root, s_pause_layer);
-  tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
+  tick_timer_service_subscribe(SECOND_UNIT, tick_handler);
 }
 
 static void window_appear(Window *window) {
