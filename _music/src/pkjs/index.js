@@ -1159,7 +1159,8 @@ var CLIENT_ID = '0f62a6ce3ca444208f408007b67226bb';
 var CONFIG_URL = 'https://pebble-music-config.jota-costa.workers.dev/';
 var API = 'https://api.spotify.com/v1';
 var TOKEN_URL = 'https://accounts.spotify.com/api/token';
-var ART_SIZE = 200;
+var ART_W = 200;
+var ART_H = 228;
 var CHUNK = 1024;
 
 function store(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
@@ -1215,13 +1216,24 @@ function api(method, path, body, cb, retried) {
 // --- art pipeline: JPEG bytes -> 144x144 GColor8 bytes -> chunked send ---
 
 function downscaleQuantize(rgb, w, h) {
-  var out = new Uint8Array(ART_SIZE * ART_SIZE);
-  for (var oy = 0; oy < ART_SIZE; oy++) {
-    var y0 = Math.floor(oy * h / ART_SIZE);
-    var y1 = Math.max(y0 + 1, Math.floor((oy + 1) * h / ART_SIZE));
-    for (var ox = 0; ox < ART_SIZE; ox++) {
-      var x0 = Math.floor(ox * w / ART_SIZE);
-      var x1 = Math.max(x0 + 1, Math.floor((ox + 1) * w / ART_SIZE));
+  // Cover, not fit: crop the source to the target aspect (centered),
+  // then box-average the crop. A square album on the portrait screen
+  // loses its sides, never stretches.
+  var out = new Uint8Array(ART_W * ART_H);
+  var cx0 = 0, cy0 = 0, cw = w, ch = h;
+  if (w / h > ART_W / ART_H) {
+    cw = Math.max(1, Math.floor(h * ART_W / ART_H)); cx0 = Math.floor((w - cw) / 2);
+  } else if (w / h < ART_W / ART_H) {
+    ch = Math.max(1, Math.floor(w * ART_H / ART_W)); cy0 = Math.floor((h - ch) / 2);
+  }
+  for (var oy = 0; oy < ART_H; oy++) {
+    var yb0 = Math.floor(oy * ch / ART_H);
+    var y1 = cy0 + Math.max(yb0 + 1, Math.floor((oy + 1) * ch / ART_H));
+    var y0 = cy0 + yb0;
+    for (var ox = 0; ox < ART_W; ox++) {
+      var xb0 = Math.floor(ox * cw / ART_W);
+      var x1 = cx0 + Math.max(xb0 + 1, Math.floor((ox + 1) * cw / ART_W));
+      var x0 = cx0 + xb0;
       var r = 0, g = 0, b = 0, n = 0;
       for (var y = y0; y < y1; y++) {
         for (var x = x0; x < x1; x++) {
@@ -1231,7 +1243,7 @@ function downscaleQuantize(rgb, w, h) {
       }
       r = Math.floor(r / n); g = Math.floor(g / n); b = Math.floor(b / n);
       // GColor8: AA RR GG BB, 2 bits each; alpha opaque (3).
-      out[oy * ART_SIZE + ox] = 0xC0 | ((r >> 6) << 4) | ((g >> 6) << 2) | (b >> 6);
+      out[oy * ART_W + ox] = 0xC0 | ((r >> 6) << 4) | ((g >> 6) << 2) | (b >> 6);
     }
   }
   return out;
@@ -1255,7 +1267,7 @@ function sendArt(bytes) {
     var arr = [];
     for (var k = 0; k < slice.length; k++) arr.push(slice[k]);
     Pebble.sendAppMessage({
-      ART_W: ART_SIZE, ART_H: ART_SIZE, ART_IDX: idx, ART_TOTAL: total, ART_DATA: arr
+      ART_W: ART_W, ART_H: ART_H, ART_IDX: idx, ART_TOTAL: total, ART_DATA: arr
     }, function () { i++; tries = 0; sendChunkAt(); }, function () {
       if (++tries <= 3) setTimeout(sendChunkAt, 200);
     });
@@ -1267,7 +1279,7 @@ function sendArt(bytes) {
   var startTries = 0;
   function sendStart() {
     Pebble.sendAppMessage({
-      ART_W: ART_SIZE, ART_H: ART_SIZE, ART_TOTAL: total, ART_START: total
+      ART_W: ART_W, ART_H: ART_H, ART_TOTAL: total, ART_START: total
     }, sendChunkAt, function () {
       if (++startTries <= 3) setTimeout(sendStart, 200);
       else sendChunkAt();
@@ -1277,7 +1289,7 @@ function sendArt(bytes) {
 }
 
 function clearArt() {
-  Pebble.sendAppMessage({ ART_W: ART_SIZE, ART_H: ART_SIZE, ART_IDX: 0, ART_TOTAL: 0, ART_DATA: [] });
+  Pebble.sendAppMessage({ ART_W: ART_W, ART_H: ART_H, ART_IDX: 0, ART_TOTAL: 0, ART_DATA: [] });
 }
 
 function fetchArt(url, id) {

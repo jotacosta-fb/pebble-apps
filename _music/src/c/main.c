@@ -1,7 +1,7 @@
-// _music — Spotify controller. White background, full-bleed album art
-// (full width, bottom at the title, top cropped off-screen), song name
-// as a tight caption below the art, button bumps flushed to the right
-// edge. When nothing is playing, the art layer
+// _music — Spotify controller. Full-display album art (the whole screen),
+// with the title as a footer overlay: a white box at the bottom with
+// black Gothic 28 text, button bumps flushed to the right edge.
+// When nothing is playing, the art layer
 // hides and a grey Spotify logo (disc + knocked-out arcs) shows instead.
 // Buttons: Select = play/pause, Up = previous track, Down = next track.
 // Back is left at the system default (pops the app).
@@ -9,16 +9,23 @@
 // top to bottom, as chunks land. No idle exit: a controller stays up while listening.
 // family.h is included for the shared button slide (the Up/Down press
 // feedback) and the night engine (day/night chrome: window background,
-// caption, slide and logo follow the on-watch sun times).
+// slide and logo follow the on-watch sun times — the footer stays white
+// with black text day and night).
 // No wobble, no earmarks: art must not wobble, and earmarks would paint
 // over pixels. Everything in the header is opt-in.
 #include <pebble.h>
 #include "../../shared/family.h"
 
-#define ART_SIZE 200
+#define ART_W 200
+#define ART_H 228
 #define ART_CHUNK 1024
-#define ART_BYTES (ART_SIZE * ART_SIZE)
-#define FOOTER_H 38
+#define ART_BYTES (ART_W * ART_H)
+#define FOOTER_H 36
+// Text layer top for the footer title, so the Gothic 28 ink centers in
+// the 36-tall white box (box 192..228, center 210). Measured on the
+// 1.1.30 pin: ink offset 9 from the layer top, ink 23 tall, so top 190
+// puts ink at 199..221, center exactly 210.
+#define FOOTER_TEXT_TOP 190
 #define TRACK_MAX 127
 #define PAUSE_BAR_W 18
 #define PAUSE_BAR_H 78
@@ -30,7 +37,6 @@
 static Window *s_window;
 static BitmapLayer *s_art_layer;
 static TextLayer *s_track_layer;
-static GFont s_title_font;
 static Layer *s_chrome_layer;
 static Layer *s_pause_layer;
 static GBitmap *s_bmp;
@@ -41,8 +47,7 @@ static char s_track[TRACK_MAX + 1];
 static bool s_playing = false;
 static bool s_art_seen = false;
 static GRect s_art_rect;
-static int s_caption_top;
-static bool s_show_footer = false;
+static Layer *s_footer_layer;
 
 static void send_key(uint32_t key) {
   DictionaryIterator *iter = NULL;
@@ -97,10 +102,9 @@ static void draw_logo_poly(GContext *ctx, const GPoint *poly, int count, int ccx
 }
 
 static void draw_spotify_logo(GContext *ctx, GRect bounds) {
-  // Centered on the VISIBLE art: full width, 0..caption_top (emery), or
-  // the whole screen when the caption hides (basalt fallback).
+  // Centered on the screen: the art fills it, so art center = screen center.
   int ccx = bounds.size.w / 2;
-  int ccy = s_show_footer ? s_caption_top / 2 : bounds.size.h / 2;
+  int ccy = bounds.size.h / 2;
   // Knocked out to the background: disc grey, arcs in the background
   // color, so the logo reads on white by day and black by night.
   graphics_context_set_fill_color(ctx, family_night ? GColorLightGray : GColorDarkGray);
@@ -140,7 +144,7 @@ static void pause_update_proc(Layer *layer, GContext *ctx) {
   if (!s_art_seen || s_playing) return;
   GRect bounds = layer_get_bounds(layer);
   int cx = bounds.size.w / 2;
-  int cy = s_show_footer ? s_caption_top / 2 : bounds.size.h / 2;
+  int cy = bounds.size.h / 2;
   int half_w = PAUSE_BAR_W + PAUSE_BAR_GAP / 2;
   int half_h = PAUSE_BAR_H / 2;
   graphics_context_set_fill_color(ctx, GColorWhite);
@@ -161,10 +165,6 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
   if (family_place_apply(iter, MESSAGE_KEY_LAT, MESSAGE_KEY_LON, PKEY_LAT, PKEY_LON)) {
     window_set_background_color(s_window, family_bg_color());
     if (s_chrome_layer) layer_mark_dirty(s_chrome_layer);
-    if (s_track_layer) {
-      text_layer_set_text_color(s_track_layer, family_ink_color());
-      layer_mark_dirty(text_layer_get_layer(s_track_layer));
-    }
     if (s_pause_layer) layer_mark_dirty(s_pause_layer);
   }
   Tuple *track_t = dict_find(iter, MESSAGE_KEY_TRACK);
@@ -189,7 +189,7 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
   if (start_t && w_t && h_t && total_t) {
     // New art starting: white buffer and frame on now; the chunks that follow
     // land in random order, so the reset lives here, NOT on idx 0.
-    if (w_t->value->int32 != ART_SIZE || h_t->value->int32 != ART_SIZE) return;
+    if (w_t->value->int32 != ART_W || h_t->value->int32 != ART_H) return;
     if (!s_art_data) return;
     uint32_t total = total_t->value->uint32;
     if (total == 0) return;
@@ -204,7 +204,7 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
     return;
   }
   if (!w_t || !h_t || !idx_t || !total_t || !data_t) return;
-  if (w_t->value->int32 != ART_SIZE || h_t->value->int32 != ART_SIZE) return;
+  if (w_t->value->int32 != ART_W || h_t->value->int32 != ART_H) return;
   if (!s_art_data) return;
 
   uint32_t idx = idx_t->value->uint32;
@@ -235,16 +235,20 @@ static void inbox_received(DictionaryIterator *iter, void *context) {
 }
 
 static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
-  // A night flip repaints the chrome: background, frame, caption, slide.
+  // A night flip repaints the chrome: background and slide. The footer
+  // stays white with black text, so it needs no repaint.
   if (family_night_tick()) {
     window_set_background_color(s_window, family_bg_color());
     if (s_chrome_layer) layer_mark_dirty(s_chrome_layer);
-    if (s_track_layer) {
-      text_layer_set_text_color(s_track_layer, family_ink_color());
-      layer_mark_dirty(text_layer_get_layer(s_track_layer));
-    }
     if (s_pause_layer) layer_mark_dirty(s_pause_layer);
   }
+}
+
+// Footer box: solid white, always (day and night), under the title text.
+static void footer_update_proc(Layer *layer, GContext *ctx) {
+  GRect bounds = layer_get_bounds(layer);
+  graphics_context_set_fill_color(ctx, GColorWhite);
+  graphics_fill_rect(ctx, bounds, 0, GCornerNone);
 }
 
 static void window_load(Window *window) {
@@ -254,25 +258,19 @@ static void window_load(Window *window) {
   // already decide day vs night here.
   family_place_load(PKEY_LAT, PKEY_LON);
   window_set_background_color(window, family_bg_color());
-  // The title stays at y171, where 1.1.28 put it on emery; the art
-  // expands UP from there: full width, bottom at the title, top cropped
-  // off-screen (200 tall against a 171-tall slot). When the caption
-  // can't fit (basalt), the art alone stays centered and the caption
-  // hides, as before.
-  s_caption_top = 171;
-  s_show_footer = (s_caption_top + FOOTER_H <= bounds.size.h);
-  int ax, ay;
-  if (s_show_footer) { ax = 0; ay = s_caption_top - ART_SIZE; }
-  else { ax = (bounds.size.w - ART_SIZE) / 2; ay = (bounds.size.h - ART_SIZE) / 2; }
-  s_art_rect = GRect(ax, ay, ART_SIZE, ART_SIZE);
+  // Full-display art, centered on every screen: exactly the screen on
+  // emery, center-cropped on basalt. The title is a footer overlay, not
+  // a caption below the art anymore.
+  s_art_rect = GRect((bounds.size.w - ART_W) / 2, (bounds.size.h - ART_H) / 2,
+                     ART_W, ART_H);
   s_chrome_layer = layer_create(bounds);
   layer_set_update_proc(s_chrome_layer, chrome_update_proc);
   // Chrome is added AFTER the art layer below, so it sits above the art
   // and the slide draws over the artwork (see chrome_update_proc).
 #ifdef PBL_COLOR
-  s_bmp = gbitmap_create_blank(GSize(ART_SIZE, ART_SIZE), GBitmapFormat8Bit);
+  s_bmp = gbitmap_create_blank(GSize(ART_W, ART_H), GBitmapFormat8Bit);
   s_art_data = gbitmap_get_data(s_bmp);
-  // 8-bit rows carry no stride restriction; the blank's rows are exactly ART_SIZE
+  // 8-bit rows carry no stride restriction; the blank's rows are exactly ART_W
   // bytes wide, so chunk bytes land row-major in order. If a platform ever padded
   // rows, the art would shear visibly — the emulator pin test proves it on emery.
   memset(s_art_data, 0xFF, ART_BYTES);
@@ -282,21 +280,24 @@ static void window_load(Window *window) {
   layer_set_hidden(bitmap_layer_get_layer(s_art_layer), true);
   layer_add_child(root, bitmap_layer_get_layer(s_art_layer));
 #endif
+  // Footer white box, over the art.
+  s_footer_layer = layer_create(
+      GRect(0, bounds.size.h - FOOTER_H, bounds.size.w, FOOTER_H));
+  layer_set_update_proc(s_footer_layer, footer_update_proc);
+  layer_add_child(root, s_footer_layer);
+  // Title text, transparent over the white box, top set so the ink
+  // centers in the box (FOOTER_TEXT_TOP). Back to Gothic 28 Bold — the
+  // Roboto 30 step is over. Black on white, day and night.
+  s_track_layer = text_layer_create(
+      GRect(0, FOOTER_TEXT_TOP, bounds.size.w, FOOTER_H));
+  text_layer_set_font(s_track_layer, fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD));
+  text_layer_set_text_alignment(s_track_layer, GTextAlignmentCenter);
+  text_layer_set_text_color(s_track_layer, GColorBlack);
+  text_layer_set_background_color(s_track_layer, GColorClear);
+  text_layer_set_text(s_track_layer, s_track);
+  layer_add_child(root, text_layer_get_layer(s_track_layer));
+  // Chrome above the footer, so the slide draws over the white box too.
   layer_add_child(root, s_chrome_layer);
-  if (s_show_footer) {
-    s_track_layer = text_layer_create(
-        GRect(0, s_caption_top, bounds.size.w, FOOTER_H));
-    // Title in Roboto Bold 30 (custom resource, Apache 2.0, from the
-    // SDK's Moddable samples) — the closest sans to Gothic at 30 px; no
-    // Gothic 30 exists (system Gothic tops out at 28).
-    s_title_font = fonts_load_custom_font(resource_get_handle(RESOURCE_ID_FONT_ROBOTO_30));
-    text_layer_set_font(s_track_layer, s_title_font);
-    text_layer_set_text_alignment(s_track_layer, GTextAlignmentCenter);
-    text_layer_set_text_color(s_track_layer, family_ink_color());
-    text_layer_set_background_color(s_track_layer, GColorClear);
-    text_layer_set_text(s_track_layer, s_track);
-    layer_add_child(root, text_layer_get_layer(s_track_layer));
-  }
   // Paused overlay, topmost: transparent, draws only when paused on art.
   s_pause_layer = layer_create(bounds);
   layer_set_update_proc(s_pause_layer, pause_update_proc);
@@ -312,8 +313,7 @@ static void window_unload(Window *window) {
   tick_timer_service_unsubscribe();
   family_slide_teardown();
   if (s_track_layer) text_layer_destroy(s_track_layer);
-  if (s_title_font) fonts_unload_custom_font(s_title_font);
-  s_title_font = NULL;
+  layer_destroy(s_footer_layer);
   layer_destroy(s_chrome_layer);
   if (s_pause_layer) layer_destroy(s_pause_layer);
 #ifdef PBL_COLOR

@@ -28,14 +28,7 @@
       "LON"
     ],
     "resources": {
-      "media": [
-        {
-          "type": "font",
-          "name": "FONT_ROBOTO_30",
-          "file": "fonts/Roboto-Bold.ttf",
-          "characterRegex": "[\\u0020-\\u007E\\u00A0-\\u00FF\\u2010-\\u201F]"
-        }
-      ]
+      "media": []
     },
     "watchapp": {
       "watchface": false
@@ -51,5 +44,5 @@
       "flint"
     ]
   },
-  "version": "1.1.29"
+  "version": "1.1.30"
 }
