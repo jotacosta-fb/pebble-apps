@@ -22,6 +22,7 @@
 #define ART_BYTES (ART_W * ART_H)
 #define FOOTER_H 36
 #define FOOTER_PAD_X 10
+#define FOOTER_FADE_W 12
 // Text layer top for the footer title, so the Gothic 28 ink centers in
 // the 36-tall white box (box 192..228, center 210). Measured on the
 // 1.1.30 pin: ink offset 9 from the layer top, ink 23 tall, so top 190
@@ -49,6 +50,7 @@ static bool s_playing = false;
 static bool s_art_seen = false;
 static GRect s_art_rect;
 static Layer *s_footer_layer;
+static GRect s_footer_box;
 static void footer_layout(void);
 
 static void send_key(uint32_t key) {
@@ -246,11 +248,49 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
   }
 }
 
-// Footer box: solid white, always (day and night), under the title text.
+// Position hash for the torn fade: deterministic, so the edge looks
+// identical on every redraw (a re-randomized edge would shimmer), and
+// it never touches rand(), so the slide's own per-press randomness is
+// undisturbed.
+static uint32_t footer_hash(int x, int y) {
+  uint32_t h = ((uint32_t)x * 73856093u) ^ ((uint32_t)y * 19349663u);
+  h ^= h >> 16;
+  return h;
+}
+
+// Footer box + torn fade, solid white always (day and night), under the
+// title text. The box ends are not straight cuts: past each end, white
+// pixels scatter into the art with a density that falls with distance,
+// so the background dissolves like a tear. The footer layer spans the
+// full width, so the fade columns (outside the box) are inside its
+// bounds; coordinates here are layer-local, and the layer sits at x 0,
+// so local x equals screen x and the box's local y is 0.
 static void footer_update_proc(Layer *layer, GContext *ctx) {
-  GRect bounds = layer_get_bounds(layer);
+  GRect lb = layer_get_bounds(layer);
+  GRect box = GRect(s_footer_box.origin.x, 0, s_footer_box.size.w, s_footer_box.size.h);
   graphics_context_set_fill_color(ctx, GColorWhite);
-  graphics_fill_rect(ctx, bounds, 0, GCornerNone);
+  graphics_fill_rect(ctx, box, 0, GCornerNone);
+  for (int side = 0; side < 2; side++) {
+    for (int d = 1; d <= FOOTER_FADE_W; d++) {
+      int x = (side == 0) ? box.origin.x - d : box.origin.x + box.size.w - 1 + d;
+      if (x < 0 || x >= lb.size.w) continue;
+      // Near-solid at the box, sparse at the outer edge.
+      int threshold = (FOOTER_FADE_W - d + 1) * 100 / (FOOTER_FADE_W + 1);
+      // Batch contiguous white runs in this column into single rects.
+      int run_y0 = -1;
+      for (int y = 0; y < box.size.h; y++) {
+        int on = ((int)(footer_hash(x, y) % 100)) < threshold;
+        if (on && run_y0 < 0) run_y0 = y;
+        if (!on && run_y0 >= 0) {
+          graphics_fill_rect(ctx, GRect(x, run_y0, 1, y - run_y0), 0, GCornerNone);
+          run_y0 = -1;
+        }
+      }
+      if (run_y0 >= 0) {
+        graphics_fill_rect(ctx, GRect(x, run_y0, 1, box.size.h - run_y0), 0, GCornerNone);
+      }
+    }
+  }
 }
 
 // The footer box shrink-wraps the title: a short title gets a compact
@@ -274,7 +314,10 @@ static void footer_layout(void) {
   int box_w = ts.w + FOOTER_PAD_X * 2;
   if (box_w > w) box_w = w;
   int box_x = (w - box_w) / 2;
-  layer_set_frame(s_footer_layer, GRect(box_x, box_y, box_w, FOOTER_H));
+  // The footer layer spans the full width (set once in window_load); the
+  // box itself lives in s_footer_box, which the update proc draws along
+  // with the fade zones past its ends.
+  s_footer_box = GRect(box_x, box_y, box_w, FOOTER_H);
   layer_set_frame(text_layer_get_layer(s_track_layer),
                   GRect(box_x, FOOTER_TEXT_TOP, box_w, FOOTER_H));
   layer_mark_dirty(s_footer_layer);
@@ -310,7 +353,8 @@ static void window_load(Window *window) {
   layer_set_hidden(bitmap_layer_get_layer(s_art_layer), true);
   layer_add_child(root, bitmap_layer_get_layer(s_art_layer));
 #endif
-  // Footer white box, over the art.
+  // Footer white box + torn fade, over the art. The layer spans the full
+  // width; the box rect itself is set by footer_layout().
   s_footer_layer = layer_create(
       GRect(0, bounds.size.h - FOOTER_H, bounds.size.w, FOOTER_H));
   layer_set_update_proc(s_footer_layer, footer_update_proc);
