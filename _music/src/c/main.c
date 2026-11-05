@@ -24,7 +24,6 @@
 #define FOOTER_PAD_X 10
 #define FOOTER_FADE_W 12
 #define LOGO_TIMEOUT_MS 30000
-#define LOGO_BAR_H 6
 // Text layer top for the footer title, so the Gothic 28 ink centers in
 // the 36-tall white box (box 192..228, center 210). Measured on the
 // 1.1.30 pin: ink offset 9 from the layer top, ink 23 tall, so top 190
@@ -162,20 +161,25 @@ static void chrome_update_proc(Layer *layer, GContext *ctx) {
   // Empty state (nothing playing, no art): the grey Spotify logo, centered
   // on the visible art area.
   if (!s_art_seen) draw_spotify_logo(ctx, bounds);
-  // Logo countdown: a bar at the very bottom, draining as the 30 s
-  // close timer runs out — full when the logo appears, gone when the
-  // app closes. The width is computed live from the deadline, so a
-  // missed tick can never leave a stale bar behind. Ink-colored, so it
-  // reads on the white day background and the black night one alike.
+  // Logo countdown: a small grey number at the bottom ("30s" down to
+  // "1s") while the close timer runs. The value is computed live from
+  // the deadline, so a missed tick can never leave a stale number
+  // behind. Grey follows day/night like the logo disc (dark grey on the
+  // white day background, light grey on the black night one).
   if (!s_art_seen) {
     int remaining = (int)(s_logo_deadline - time(NULL));
     if (remaining < 0) remaining = 0;
     if (remaining > LOGO_TIMEOUT_MS / 1000) remaining = LOGO_TIMEOUT_MS / 1000;
-    int bar_w = remaining * bounds.size.w * 1000 / LOGO_TIMEOUT_MS;
-    if (bar_w > 0) {
-      graphics_context_set_fill_color(ctx, family_ink_color());
-      graphics_fill_rect(ctx, GRect(0, bounds.size.h - LOGO_BAR_H, bar_w, LOGO_BAR_H), 0, GCornerNone);
-    }
+    char buf[8];
+    int n = 0;
+    if (remaining >= 10) buf[n++] = (char)('0' + remaining / 10);
+    buf[n++] = (char)('0' + remaining % 10);
+    buf[n++] = 's';
+    buf[n] = '\0';
+    graphics_context_set_text_color(ctx, family_night ? GColorLightGray : GColorDarkGray);
+    graphics_draw_text(ctx, buf, fonts_get_system_font(FONT_KEY_GOTHIC_18_BOLD),
+        GRect(0, bounds.size.h - 26, bounds.size.w, 26),
+        GTextOverflowModeTrailingEllipsis, GTextAlignmentCenter, NULL);
   }
   // Button press feedback: the shared family slide, drawn last so it
   // stays visible over the logo and the art. The helper sets its own fill
@@ -292,9 +296,9 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
     if (s_chrome_layer) layer_mark_dirty(s_chrome_layer);
     if (s_pause_layer) layer_mark_dirty(s_pause_layer);
   }
-  // Logo countdown bar: redraw the chrome once a second while the logo
-  // shows, so the bar drains. With art showing there is nothing to
-  // update, so no extra dirty marks.
+  // Logo countdown number: redraw the chrome once a second while the
+  // logo shows, so the number counts down. With art showing there is
+  // nothing to update, so no extra dirty marks.
   if (!s_art_seen && s_chrome_layer) layer_mark_dirty(s_chrome_layer);
 }
 

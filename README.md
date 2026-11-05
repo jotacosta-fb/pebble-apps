@@ -11,7 +11,7 @@ typeface. Author: Jota.
 | [_countdown](_countdown/) | A 45-minute countdown timer (adjustable), with a wakeup at zero. | 1.5.4 |
 | [_life](_life/) | Magic: The Gathering life counter, 20 to 0. | 1.10.3 |
 | [_watchface](_watchface/) | Watchface forked from Lean: huge tilted time, day/night aware, font-size setting. | 1.4.20 |
-| [_music](_music/) | Spotify controller: fullscreen album art, buttons do the controlling. | 1.1.34 |
+| [_music](_music/) | Spotify controller: fullscreen album art, buttons do the controlling. | 1.1.35 |
 
 ## Shared code
 
