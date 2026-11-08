@@ -2,7 +2,7 @@
 #include "../../shared/family.h"
 
 // _life — an MTG life counter. The total in LECO 60, centered on
-// screen over a background that tints green (20) to red (0). A + at
+// screen over a background that is always white. A + at
 // top center and a - at bottom center mirror the Up/Down buttons.
 // Starts at 20. Up/Down adjust by 1 (hold to repeat), holding Select
 // resets to 20 — same controls language as _countdown. The total
@@ -49,33 +49,11 @@ static int s_life = START_LIFE;
 // right goes right. The +/- markers stay put. Any button press
 // stops it, and the reset animation cancels it too.
 
-// Green at 20+, red at 0 and below; the tint routes through yellow
-// (20→10 green→yellow, 10→0 yellow→red) so the middle reads as a
-// warning instead of a muddy brown.
-static GColor life_color(int life) {
-#ifdef PBL_COLOR
-  if (life >= START_LIFE) return GColorFromRGB(64, 199, 99);
-  if (life <= 0) return GColorFromRGB(235, 64, 52);
-  int r, g, b;
-  if (life >= START_LIFE / 2) {
-    int t = (life - START_LIFE / 2) * 255 / (START_LIFE / 2);  // 0..255
-    r = 255 + (64 - 255) * t / 255;
-    g = 200 + (199 - 200) * t / 255;
-    b = 0 + (99 - 0) * t / 255;
-  } else {
-    int t = life * 255 / (START_LIFE / 2);
-    r = 235 + (255 - 235) * t / 255;
-    g = 64 + (200 - 64) * t / 255;
-    b = 52 + (0 - 52) * t / 255;
-  }
-  return GColorFromRGB(r, g, b);
-#else
-  return GColorWhite;
-#endif
-}
-
+// The background is always white (user, v1.10.4): the old green→
+// yellow→red tint by life total is gone. The digits and markers stay
+// black, so the total reads the same at any life total.
 static void refresh_display(void) {
-  window_set_background_color(s_window, life_color(s_life));
+  window_set_background_color(s_window, GColorWhite);
   layer_mark_dirty(s_main_layer);
 }
 
@@ -204,9 +182,9 @@ static void window_appear(Window *window) {
 // ---------- Reset animation: black out, then white ----------
 // Holding Select runs a two-phase refresh (user spec): a BLACK disc
 // expands from the screen's center until the whole screen is black;
-// then the new tint (green) expands from the center again, revealing
-// the new total as it goes. It lands directly on the normal view:
-// tint background and the +/- markers maintained.
+// then white expands from the center again, revealing the new total
+// as it goes. It lands directly on the normal view: white background
+// and the +/- markers maintained.
 // Each phase takes ~0.65s (tuned with the user: v1.9.0's 0.9s
 // phases were still a touch slow; the original was too fast).
 
@@ -240,10 +218,11 @@ static void anim_frame(void *context) {
       s_anim_phase = 2;
       s_anim_step = 0;
     } else {
-      // Animation ends: settle into the normal view — the tint and
-      // the +/- markers come back (user: maintain them at the end).
+      // Animation ends: settle into the normal view — the white
+      // background and the +/- markers come back (user: maintain
+      // them at the end).
       s_anim = false;
-      window_set_background_color(s_window, life_color(s_life));
+      window_set_background_color(s_window, GColorWhite);
       layer_mark_dirty(s_main_layer);
       return;
     }
@@ -273,7 +252,7 @@ static void anim_cancel(void) {
     app_timer_cancel(s_anim_timer);
     s_anim_timer = NULL;
   }
-  window_set_background_color(s_window, life_color(s_life));
+  window_set_background_color(s_window, GColorWhite);
 }
 
 // Full-screen layer: + at top center, the total centered,
@@ -293,13 +272,12 @@ static void main_update_proc(Layer *layer, GContext *ctx) {
       graphics_context_set_fill_color(ctx, GColorBlack);
       if (r > 0) graphics_fill_circle(ctx, GPoint(cx, cy), r);
     } else {
-      // All black, then the GREEN tint blooms from the center
-      // directly (no white step). The new total is drawn over
-      // everything: black digits are only visible where the tint
-      // has reached, so they emerge with the wave.
+      // All black, then white blooms from the center. The new total
+      // is drawn over everything: black digits are only visible
+      // where the white has reached, so they emerge with the wave.
       graphics_context_set_fill_color(ctx, GColorBlack);
       graphics_fill_rect(ctx, b, 0, GCornerNone);
-      graphics_context_set_fill_color(ctx, life_color(START_LIFE));
+      graphics_context_set_fill_color(ctx, GColorWhite);
       if (r > 0) graphics_fill_circle(ctx, GPoint(cx, cy), r);
       graphics_context_set_fill_color(ctx, GColorBlack);
       draw_value(ctx, b, START_LIFE);
@@ -310,11 +288,11 @@ static void main_update_proc(Layer *layer, GContext *ctx) {
   }
 
   // Corner paint (user, v1.10.3): the shared family marks —
-  // black like the digits and markers, gated on the tint
+  // black like the digits and markers, gated on the background
   // being light (the shared rule, not a per-app override).
   // Drawn after everything, including the reset-animation
   // frames, so the corners stay painted throughout.
-  family_earmarks(ctx, b, GColorBlack, life_color(s_life));
+  family_earmarks(ctx, b, GColorBlack, GColorWhite);
 }
 
 static void window_load(Window *window) {
